@@ -42,8 +42,8 @@ class FileBridgeApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("FileBridge")
-        self.root.geometry("650x540")
-        self.root.minsize(580, 500)
+        self.root.geometry("760x700")
+        self.root.minsize(680, 620)
         self.root.configure(bg="#101827")
         self.shared_folder: Path | None = None
         self.server: ThreadingHTTPServer | None = None
