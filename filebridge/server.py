@@ -305,7 +305,7 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
                     raise ValueError("Invalid upload path.")
                 clean_parts = [_safe_name(part) for part in parts]
                 destination = resolve_shared_path(root, str(data.get("path", "")))
-                if not destination.is_dir() or size <= 0 or size > MAX_UPLOAD_BYTES:
+                if not destination.is_dir() or size < 0 or size > MAX_UPLOAD_BYTES:
                     raise ValueError("Invalid upload destination or file size.")
                 target_parent = destination
                 for folder_name in clean_parts[:-1]:
