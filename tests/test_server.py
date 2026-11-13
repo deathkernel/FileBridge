@@ -57,3 +57,55 @@ class ParseRangeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FileServerIntegrationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        import json
+        import threading
+        import urllib.request
+
+        self._json = json
+        self._threading = threading
+        self._request = urllib.request.Request
+        self._urlopen = urllib.request.urlopen
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name).resolve()
+        (self.root / "clip.mp4").write_bytes(b"0123456789")
+        from filebridge.server import create_server
+
+        self.server = create_server(self.root, 0)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base_url = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+        self.temp_dir.cleanup()
+
+    def test_directory_listing_returns_file_metadata(self) -> None:
+        with self._urlopen(f"{self.base_url}/api/files") as response:
+            payload = self._json.loads(response.read().decode("utf-8"))
+        self.assertEqual(payload["items"][0]["name"], "clip.mp4")
+        self.assertEqual(payload["items"][0]["size"], 10)
+
+    def test_file_server_supports_http_byte_ranges(self) -> None:
+        request = self._request(
+            f"{self.base_url}/api/file?path=clip.mp4",
+            headers={"Range": "bytes=2-5"},
+        )
+        with self._urlopen(request) as response:
+            self.assertEqual(response.status, 206)
+            self.assertEqual(response.headers["Content-Range"], "bytes 2-5/10")
+            self.assertEqual(response.read(), b"2345")
+
+    def test_file_server_rejects_parent_traversal(self) -> None:
+        from urllib.error import HTTPError
+
+        with self.assertRaises(HTTPError) as raised:
+            self._urlopen(f"{self.base_url}/api/files?path=..%2Foutside")
+        self.assertEqual(raised.exception.code, 400)
+
+
