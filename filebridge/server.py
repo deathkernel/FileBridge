@@ -165,6 +165,8 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
                 self._serve_file(self._query_path(), attachment=download)
             elif route == "/api/archive":
                 self._serve_archive(self._query_path())
+            elif route == "/api/upload/status":
+                self._upload_status()
             else:
                 self._send_json({"error": "Not found."}, 404)
 

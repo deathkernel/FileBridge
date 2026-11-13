@@ -68,6 +68,27 @@ class FileBridgeIntegrationTests(unittest.TestCase):
             self.assertTrue(json.loads(response.read())["ok"])
         self.assertEqual((self.root / "My Folder" / "sub folder" / "hello world.txt").read_bytes(), b"data")
 
+    def test_chunked_upload_resumes_and_completes(self) -> None:
+        payload = b"abcdefgh"
+        with self.json_post("/api/upload/init", {"path": "", "name": "chunked.bin", "size": 8}) as response:
+            upload_id = json.loads(response.read())["upload_id"]
+        with self.request("/api/upload/chunk", "POST", payload[:4], {"X-Upload-Id": upload_id, "X-Upload-Offset": "0", "Content-Length": "4"}) as response:
+            self.assertEqual(json.loads(response.read())["offset"], 4)
+        with self.request("/api/upload/status?upload_id=" + upload_id) as response:
+            self.assertEqual(json.loads(response.read())["offset"], 4)
+        with self.request("/api/upload/chunk", "POST", payload[4:], {"X-Upload-Id": upload_id, "X-Upload-Offset": "4", "Content-Length": "4"}) as response:
+            self.assertEqual(json.loads(response.read())["offset"], 8)
+        with self.json_post("/api/upload/complete", {"upload_id": upload_id}) as response:
+            self.assertTrue(json.loads(response.read())["ok"])
+        self.assertEqual((self.root / "chunked.bin").read_bytes(), payload)
+
+    def test_chunked_upload_rejects_wrong_offset(self) -> None:
+        with self.json_post("/api/upload/init", {"path": "", "name": "wrong.bin", "size": 4}) as response:
+            upload_id = json.loads(response.read())["upload_id"]
+        with self.assertRaises(HTTPError) as raised:
+            self.request("/api/upload/chunk", "POST", b"data", {"X-Upload-Id": upload_id, "X-Upload-Offset": "1", "Content-Length": "4"})
+        self.assertEqual(raised.exception.code, 409)
+
     def test_upload_rejects_overwrite(self) -> None:
         with self.assertRaises(HTTPError) as raised:
             self.request("/api/upload", "POST", b"new", {"X-Relative-Path": "notes.txt", "Content-Length": "3"})
