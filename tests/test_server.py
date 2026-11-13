@@ -55,10 +55,6 @@ class ParseRangeTests(unittest.TestCase):
             _parse_range("bytes=20-", 10)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class FileServerIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         import json
@@ -109,3 +105,7 @@ class FileServerIntegrationTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 400)
 
 
+
+
+if __name__ == "__main__":
+    unittest.main()
