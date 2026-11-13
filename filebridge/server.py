@@ -12,6 +12,7 @@ import secrets
 import shutil
 import stat
 import tempfile
+import threading
 import zipfile
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,6 +22,8 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 CHUNK_SIZE = 1024 * 1024
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024
+upload_sessions: dict[str, dict[str, Any]] = {}
+upload_lock = threading.Lock()
 mimetypes.add_type("video/x-matroska", ".mkv")
 mimetypes.add_type("video/mp4", ".m4v")
 mimetypes.add_type("audio/flac", ".flac")
@@ -180,6 +183,21 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
             operations = {"/api/upload": self._upload_file, "/api/folder": self._create_folder,
                           "/api/rename": self._rename, "/api/delete": self._delete, "/api/move": self._move}
             operation = operations.get(route)
+            if route == "/api/upload/status":
+                self._upload_status()
+                return
+            if route == "/api/upload/init":
+                self._upload_init()
+                return
+            if route == "/api/upload/chunk":
+                self._upload_chunk()
+                return
+            if route == "/api/upload/complete":
+                self._upload_complete()
+                return
+            if route == "/api/upload/cancel":
+                self._upload_cancel()
+                return
             if operation:
                 operation()
             else:
@@ -274,6 +292,98 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
                         self._send_json({"error": "File is unavailable."}, 404)
                     except OSError:
                         pass
+
+        def _upload_init(self) -> None:
+            try:
+                data = self._json_body()
+                size = int(data.get("size", -1))
+                name = _safe_name(str(data.get("name", "")))
+                destination = resolve_shared_path(root, str(data.get("path", "")))
+                if not destination.is_dir() or size <= 0 or size > MAX_UPLOAD_BYTES:
+                    raise ValueError("Invalid upload destination or file size.")
+                target = destination / name
+                if target.exists():
+                    self._send_json({"error": "An item with this name already exists."}, 409)
+                    return
+                with upload_lock:
+                    if len(upload_sessions) >= 8:
+                        self._send_json({"error": "Too many active uploads."}, 429)
+                        return
+                    upload_id = secrets.token_urlsafe(24)
+                    fd, temp_name = tempfile.mkstemp(prefix=".filebridge-", suffix=".resume", dir=destination)
+                    os.close(fd)
+                    upload_sessions[upload_id] = {"path": target, "temp": Path(temp_name), "size": size, "received": 0, "lock": threading.Lock()}
+                self._send_json({"upload_id": upload_id, "offset": 0, "chunk_size": 4 * 1024 * 1024})
+            except (ValueError, FileAccessError, OSError) as exc:
+                self._send_json({"error": str(exc) or "Could not start upload."}, 400)
+
+        def _upload_status(self) -> None:
+            upload_id = parse_qs(urlsplit(self.path).query).get("upload_id", [""])[0]
+            with upload_lock:
+                session = upload_sessions.get(upload_id)
+            if not session:
+                self._send_json({"error": "Upload session not found."}, 404)
+                return
+            with session["lock"]:
+                self._send_json({"upload_id": upload_id, "offset": session["received"], "size": session["size"]})
+
+        def _upload_chunk(self) -> None:
+            upload_id = self.headers.get("X-Upload-Id", "")
+            with upload_lock:
+                session = upload_sessions.get(upload_id)
+            if not session:
+                self._send_json({"error": "Upload session not found."}, 404)
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                offset = int(self.headers.get("X-Upload-Offset", "-1"))
+                with session["lock"]:
+                    if length <= 0 or length > 4 * 1024 * 1024 or offset != session["received"] or session["received"] + length > session["size"]:
+                        self._send_json({"error": "Invalid chunk size or upload offset."}, 409)
+                        return
+                    with session["temp"].open("ab") as output:
+                        remaining = length
+                        while remaining:
+                            chunk = self.rfile.read(min(CHUNK_SIZE, remaining))
+                            if not chunk:
+                                raise OSError("Upload connection ended early.")
+                            output.write(chunk)
+                            remaining -= len(chunk)
+                        output.flush()
+                    session["received"] += length
+                    self._send_json({"ok": True, "offset": session["received"], "size": session["size"]})
+            except (ValueError, OSError) as exc:
+                self._send_json({"error": str(exc) or "Chunk upload failed."}, 400)
+
+        def _upload_complete(self) -> None:
+            data = self._json_body()
+            upload_id = str(data.get("upload_id", ""))
+            with upload_lock:
+                session = upload_sessions.get(upload_id)
+            if not session:
+                self._send_json({"error": "Upload session not found."}, 404)
+                return
+            with session["lock"]:
+                if session["received"] != session["size"]:
+                    self._send_json({"error": "Upload is incomplete."}, 409)
+                    return
+                if session["path"].exists():
+                    self._send_json({"error": "A file with this name already exists."}, 409)
+                    return
+                os.replace(session["temp"], session["path"])
+                with upload_lock:
+                    upload_sessions.pop(upload_id, None)
+                self._send_json({"ok": True, "item": _file_metadata(session["path"], session["path"].relative_to(root).as_posix())})
+
+        def _upload_cancel(self) -> None:
+            data = self._json_body()
+            upload_id = str(data.get("upload_id", ""))
+            with upload_lock:
+                session = upload_sessions.pop(upload_id, None)
+            if session:
+                with session["lock"]:
+                    session["temp"].unlink(missing_ok=True)
+            self._send_json({"ok": True})
 
         def _upload_file(self) -> None:
             temporary: Path | None = None
