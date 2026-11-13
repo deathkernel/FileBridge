@@ -299,11 +299,22 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
             try:
                 data = self._json_body()
                 size = int(data.get("size", -1))
-                name = _safe_name(str(data.get("name", "")))
+                relative = str(data.get("relative", data.get("name", ""))).replace("\\", "/")
+                parts = PurePosixPath(relative).parts
+                if not parts or any(part in ("", ".", "..") for part in parts):
+                    raise ValueError("Invalid upload path.")
+                clean_parts = [_safe_name(part) for part in parts]
                 destination = resolve_shared_path(root, str(data.get("path", "")))
                 if not destination.is_dir() or size <= 0 or size > MAX_UPLOAD_BYTES:
                     raise ValueError("Invalid upload destination or file size.")
-                target = destination / name
+                target_parent = destination
+                for folder_name in clean_parts[:-1]:
+                    target_parent = resolve_shared_path(root, (target_parent / folder_name).relative_to(root).as_posix())
+                    if target_parent.exists() and not target_parent.is_dir():
+                        raise ValueError("Upload folder conflicts with an existing file.")
+                    target_parent.mkdir(exist_ok=True)
+                target_parent = resolve_shared_path(root, target_parent.relative_to(root).as_posix())
+                target = target_parent / clean_parts[-1]
                 if target.exists():
                     self._send_json({"error": "An item with this name already exists."}, 409)
                     return
