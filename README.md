@@ -65,3 +65,9 @@ py -3 -m unittest discover -v
 
 GitHub Actions runs a Windows packaging job on pushes to main. Open Actions, choose the latest successful workflow run, and download the FileBridge-Windows-x64 artifact. It is an unsigned portable EXE, not an installer.
 
+
+## Current release status
+
+The Windows packaging workflow has produced a portable FileBridge-Windows-x64 executable artifact. Download it from the latest successful workflow run under the Actions tab. The executable is not code-signed and is not an installer.
+
+Chunked upload resume is supported while the server process and browser page remain open. Resume does not survive closing the browser tab or restarting the server. HTTPS and end-to-end encrypted transport are not implemented; use a trusted private Wi-Fi network only.
