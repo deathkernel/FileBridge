@@ -1,8 +1,4 @@
-const state = {
-  path: "",
-  items: [],
-  query: "",
-};
+const state = { path: "", items: [], query: "", requestId: 0, previewUrl: "" };
 
 const elements = {
   breadcrumbs: document.querySelector("#breadcrumbs"),
@@ -18,7 +14,6 @@ const elements = {
   previewTitle: document.querySelector("#preview-title"),
   previewMeta: document.querySelector("#preview-meta"),
   previewContent: document.querySelector("#preview-content"),
-  downloadLink: document.querySelector("#download-link"),
   closePreview: document.querySelector("#close-preview"),
 };
 
@@ -30,16 +25,13 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 ** index)).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-function fileUrl(path, download = false) {
-  const params = new URLSearchParams({ path });
-  if (download) params.set("download", "1");
-  return `/api/file?${params.toString()}`;
+function fileUrl(path) {
+  return `/api/file?${new URLSearchParams({ path }).toString()}`;
 }
 
 function iconLabel(item) {
   if (item.kind === "directory") return "DIR";
-  const ext = (item.extension || "").replace(".", "");
-  return (ext || "FILE").slice(0, 4);
+  return ((item.extension || "").replace(".", "") || "FILE").slice(0, 4);
 }
 
 function setError(message = "") {
@@ -56,7 +48,6 @@ function renderBreadcrumbs() {
     current = current ? `${current}/${part}` : part;
     crumbs.push({ label: part, path: current });
   }
-
   crumbs.forEach((crumb, index) => {
     if (index > 0) {
       const separator = document.createElement("span");
@@ -77,7 +68,6 @@ function renderItems() {
   elements.list.replaceChildren();
   const query = state.query.trim().toLocaleLowerCase();
   const visible = state.items.filter((item) => item.name.toLocaleLowerCase().includes(query));
-
   elements.count.textContent = `${visible.length} item${visible.length === 1 ? "" : "s"}`;
   elements.empty.hidden = visible.length !== 0;
   if (visible.length === 0) return;
@@ -85,25 +75,20 @@ function renderItems() {
   for (const item of visible) {
     const row = document.createElement("div");
     row.className = "file-row";
-
     const main = document.createElement("div");
     main.className = "file-main";
-
     const icon = document.createElement("span");
     icon.className = `file-icon${item.kind === "directory" ? " folder" : ""}`;
     icon.textContent = iconLabel(item);
 
     const textWrap = document.createElement("div");
-    textWrap.style.minWidth = "0";
+    textWrap.className = "file-text";
     const name = document.createElement("button");
     name.type = "button";
     name.className = "file-name";
     name.textContent = item.name;
     name.title = item.name;
-    name.addEventListener("click", () => {
-      if (item.kind === "directory") loadFolder(item.path);
-      else openPreview(item);
-    });
+    name.addEventListener("click", () => item.kind === "directory" ? loadFolder(item.path) : openPreview(item));
     const subtitle = document.createElement("div");
     subtitle.className = "file-subtitle";
     subtitle.textContent = item.kind === "directory" ? "Folder" : (item.mime || "File");
@@ -113,66 +98,63 @@ function renderItems() {
     const size = document.createElement("span");
     size.className = "file-detail";
     size.textContent = item.kind === "directory" ? "—" : formatBytes(item.size);
-
     const modified = document.createElement("span");
     modified.className = "file-detail modified-detail";
     modified.textContent = item.modified ? new Date(item.modified).toLocaleDateString() : "—";
 
-    const action = document.createElement("a");
+    const action = document.createElement("button");
+    action.type = "button";
     action.className = "row-action";
-    action.title = item.kind === "directory" ? "Open folder" : "Download";
+    action.title = item.kind === "directory" ? "Open folder" : "Preview file";
     action.setAttribute("aria-label", action.title);
-    action.textContent = item.kind === "directory" ? "›" : "↓";
-    if (item.kind === "directory") {
-      action.href = "#";
-      action.addEventListener("click", (event) => {
-        event.preventDefault();
-        loadFolder(item.path);
-      });
-    } else {
-      action.href = fileUrl(item.path, true);
-      action.download = item.name;
-    }
-
+    action.textContent = item.kind === "directory" ? "›" : "↗";
+    action.addEventListener("click", () => item.kind === "directory" ? loadFolder(item.path) : openPreview(item));
     row.append(main, size, modified, action);
     elements.list.append(row);
   }
 }
 
 async function loadFolder(path = "") {
+  const requestId = ++state.requestId;
   state.path = path;
   elements.loading.hidden = false;
   elements.list.replaceChildren();
   elements.empty.hidden = true;
   setError();
   renderBreadcrumbs();
-
   try {
     const response = await fetch(`/api/files?${new URLSearchParams({ path })}`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Could not load this folder.");
+    if (requestId !== state.requestId) return;
     state.items = data.items || [];
-    const currentName = path ? path.split("/").filter(Boolean).at(-1) : "Shared folder";
-    elements.title.textContent = currentName;
+    const parts = path.split("/").filter(Boolean);
+    elements.title.textContent = parts.length ? parts[parts.length - 1] : "Shared folder";
     renderItems();
   } catch (error) {
+    if (requestId !== state.requestId) return;
     state.items = [];
     setError(error.message || "Connection error. Refresh and try again.");
   } finally {
-    elements.loading.hidden = true;
+    if (requestId === state.requestId) elements.loading.hidden = true;
   }
 }
 
+function closePreview() {
+  const media = elements.previewContent.querySelectorAll("video, audio");
+  media.forEach((element) => { element.pause(); element.removeAttribute("src"); element.load(); });
+  elements.previewContent.replaceChildren();
+  if (elements.dialog.open) elements.dialog.close();
+}
+
 function openPreview(item) {
+  closePreview();
   const url = fileUrl(item.path);
   const mime = item.mime || "application/octet-stream";
   elements.previewTitle.textContent = item.name;
   elements.previewMeta.textContent = `${formatBytes(item.size)} · ${mime}`;
-  elements.previewContent.replaceChildren();
-  elements.downloadLink.href = fileUrl(item.path, true);
-  elements.downloadLink.download = item.name;
-
   let preview;
+
   if (mime.startsWith("image/")) {
     preview = document.createElement("img");
     preview.src = url;
@@ -181,36 +163,37 @@ function openPreview(item) {
     preview = document.createElement("video");
     preview.src = url;
     preview.controls = true;
-    preview.autoplay = true;
+    preview.preload = "metadata";
     preview.playsInline = true;
   } else if (mime.startsWith("audio/")) {
     preview = document.createElement("audio");
     preview.src = url;
     preview.controls = true;
-    preview.autoplay = true;
+    preview.preload = "metadata";
   } else if (mime === "application/pdf") {
     preview = document.createElement("iframe");
     preview.src = url;
     preview.title = item.name;
-  } else if (mime.startsWith("text/") || ["application/json", "application/xml"].includes(mime)) {
+    preview.loading = "lazy";
+  } else if (mime.startsWith("text/") || ["application/json", "application/xml", "application/javascript"].includes(mime)) {
     preview = document.createElement("pre");
-    elements.previewContent.append(preview);
-    fetch(url).then((response) => {
+    preview.textContent = "Loading preview…";
+    fetch(url, { cache: "no-store" }).then((response) => {
       if (!response.ok) throw new Error("Preview unavailable.");
+      const length = Number(response.headers.get("Content-Length") || 0);
+      if (length > 500_000) throw new Error("Text preview is limited to 500 KB.");
       return response.text();
-    }).then((text) => {
-      preview.textContent = text.slice(0, 500_000);
-    }).catch(() => {
-      preview.textContent = "Preview unavailable. Use Download file instead.";
+    }).then((content) => {
+      if (preview.isConnected) preview.textContent = content.slice(0, 500_000);
+    }).catch((error) => {
+      if (preview.isConnected) preview.textContent = error.message || "Preview unavailable.";
     });
   } else {
-    const note = document.createElement("p");
-    note.className = "preview-note";
-    note.textContent = "Preview is not available for this file type. You can still download the original file.";
-    elements.previewContent.append(note);
+    preview = document.createElement("p");
+    preview.className = "preview-note";
+    preview.textContent = "This format cannot be previewed in your browser. No file changes are made by FileBridge.";
   }
-
-  if (preview) elements.previewContent.append(preview);
+  elements.previewContent.append(preview);
   if (typeof elements.dialog.showModal === "function") elements.dialog.showModal();
   else elements.dialog.setAttribute("open", "");
 }
@@ -220,9 +203,15 @@ elements.search.addEventListener("input", (event) => {
   renderItems();
 });
 elements.refresh.addEventListener("click", () => loadFolder(state.path));
-elements.closePreview.addEventListener("click", () => elements.dialog.close());
+elements.closePreview.addEventListener("click", closePreview);
 elements.dialog.addEventListener("click", (event) => {
-  if (event.target === elements.dialog) elements.dialog.close();
+  if (event.target === elements.dialog) closePreview();
 });
-
+elements.dialog.addEventListener("close", () => {
+  elements.previewContent.querySelectorAll("video, audio").forEach((element) => {
+    element.pause();
+    element.removeAttribute("src");
+    element.load();
+  });
+});
 loadFolder();

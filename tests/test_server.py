@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
-from filebridge.server import FileAccessError, _parse_range, resolve_shared_path
+from filebridge.server import FileAccessError, _parse_range, create_server, resolve_shared_path
 
 
 class ResolveSharedPathTests(unittest.TestCase):
@@ -18,8 +22,7 @@ class ResolveSharedPathTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_resolves_file_inside_shared_folder(self) -> None:
-        result = resolve_shared_path(self.root, "Movies/sample.mp4")
-        self.assertEqual(result, self.root / "Movies" / "sample.mp4")
+        self.assertEqual(resolve_shared_path(self.root, "Movies/sample.mp4"), self.root / "Movies" / "sample.mp4")
 
     def test_empty_path_resolves_to_shared_root(self) -> None:
         self.assertEqual(resolve_shared_path(self.root, ""), self.root)
@@ -35,6 +38,22 @@ class ResolveSharedPathTests(unittest.TestCase):
     def test_rejects_absolute_path(self) -> None:
         with self.assertRaises(FileAccessError):
             resolve_shared_path(self.root, str(self.root.parent / "secret.txt"))
+
+    def test_rejects_symlink_outside_root(self) -> None:
+        outside = Path(self.temp_dir.name).parent / "filebridge-outside-test.txt"
+        outside.write_text("secret", encoding="utf-8")
+        link = self.root / "outside-link"
+        try:
+            link.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            outside.unlink(missing_ok=True)
+            self.skipTest("Symlink creation is not available.")
+        try:
+            with self.assertRaises(FileAccessError):
+                resolve_shared_path(self.root, "outside-link")
+        finally:
+            link.unlink(missing_ok=True)
+            outside.unlink(missing_ok=True)
 
 
 class ParseRangeTests(unittest.TestCase):
@@ -54,22 +73,18 @@ class ParseRangeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _parse_range("bytes=20-", 10)
 
+    def test_rejects_multiple_ranges(self) -> None:
+        with self.assertRaises(ValueError):
+            _parse_range("bytes=0-1,4-5", 10)
+
 
 class FileServerIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
-        import json
-        import threading
-        import urllib.request
-
-        self._json = json
-        self._threading = threading
-        self._request = urllib.request.Request
-        self._urlopen = urllib.request.urlopen
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name).resolve()
         (self.root / "clip.mp4").write_bytes(b"0123456789")
-        from filebridge.server import create_server
-
+        (self.root / "notes.txt").write_text("hello", encoding="utf-8")
+        (self.root / ".hidden").write_text("secret", encoding="utf-8")
         self.server = create_server(self.root, 0)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -81,30 +96,42 @@ class FileServerIntegrationTests(unittest.TestCase):
         self.thread.join(timeout=2)
         self.temp_dir.cleanup()
 
-    def test_directory_listing_returns_file_metadata(self) -> None:
-        with self._urlopen(f"{self.base_url}/api/files") as response:
-            payload = self._json.loads(response.read().decode("utf-8"))
-        self.assertEqual(payload["items"][0]["name"], "clip.mp4")
-        self.assertEqual(payload["items"][0]["size"], 10)
+    def test_directory_listing_returns_metadata_and_hides_dotfiles(self) -> None:
+        with urlopen(f"{self.base_url}/api/files") as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        names = [item["name"] for item in payload["items"]]
+        self.assertIn("clip.mp4", names)
+        self.assertNotIn(".hidden", names)
 
     def test_file_server_supports_http_byte_ranges(self) -> None:
-        request = self._request(
-            f"{self.base_url}/api/file?path=clip.mp4",
-            headers={"Range": "bytes=2-5"},
-        )
-        with self._urlopen(request) as response:
+        request = Request(f"{self.base_url}/api/file?path=clip.mp4", headers={"Range": "bytes=2-5"})
+        with urlopen(request) as response:
             self.assertEqual(response.status, 206)
             self.assertEqual(response.headers["Content-Range"], "bytes 2-5/10")
             self.assertEqual(response.read(), b"2345")
 
     def test_file_server_rejects_parent_traversal(self) -> None:
-        from urllib.error import HTTPError
-
         with self.assertRaises(HTTPError) as raised:
-            self._urlopen(f"{self.base_url}/api/files?path=..%2Foutside")
+            urlopen(f"{self.base_url}/api/files?path=..%2Foutside")
         self.assertEqual(raised.exception.code, 400)
 
+    def test_write_methods_are_rejected(self) -> None:
+        for method in ("POST", "PUT", "PATCH", "DELETE"):
+            request = Request(f"{self.base_url}/api/file?path=clip.mp4", method=method)
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request)
+            self.assertEqual(raised.exception.code, 405)
 
+    def test_file_response_is_inline_and_not_an_attachment(self) -> None:
+        with urlopen(f"{self.base_url}/api/file?path=clip.mp4") as response:
+            self.assertTrue(response.headers["Content-Disposition"].startswith("inline;"))
+            self.assertEqual(response.headers["Accept-Ranges"], "bytes")
+            self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+
+    def test_health_endpoint_declares_read_only_mode(self) -> None:
+        with urlopen(f"{self.base_url}/api/health") as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        self.assertEqual(payload["mode"], "read-only")
 
 
 if __name__ == "__main__":
