@@ -59,6 +59,12 @@ class FileBridgeIntegrationTests(unittest.TestCase):
             self.assertTrue(json.loads(response.read())["ok"])
         self.assertEqual((self.root / "incoming.txt").read_bytes(), b"payload")
 
+    def test_uploads_nested_folder_path_and_decodes_names(self) -> None:
+        relative = "My%20Folder/sub%20folder/hello%20world.txt"
+        with self.request("/api/upload", "POST", b"data", {"X-Relative-Path": relative, "Content-Length": "4"}) as response:
+            self.assertTrue(json.loads(response.read())["ok"])
+        self.assertEqual((self.root / "My Folder" / "sub folder" / "hello world.txt").read_bytes(), b"data")
+
     def test_upload_rejects_overwrite(self) -> None:
         with self.assertRaises(HTTPError) as raised:
             self.request("/api/upload", "POST", b"new", {"X-Relative-Path": "notes.txt", "Content-Length": "3"})
@@ -81,8 +87,12 @@ class FileBridgeIntegrationTests(unittest.TestCase):
             self.assertTrue(json.loads(response.read())["ok"])
         self.assertFalse((self.root / "renamed").exists())
 
-    def test_file_download_is_attachment(self) -> None:
+    def test_file_preview_is_inline(self) -> None:
         with self.request("/api/file?path=notes.txt") as response:
+            self.assertTrue(response.headers["Content-Disposition"].startswith("inline;"))
+
+    def test_file_download_is_attachment(self) -> None:
+        with self.request("/api/file?path=notes.txt&download=1") as response:
             self.assertTrue(response.headers["Content-Disposition"].startswith("attachment;"))
 
     def test_folder_archive_is_zip(self) -> None:
