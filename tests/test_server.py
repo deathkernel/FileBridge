@@ -19,6 +19,7 @@ class FileBridgeIntegrationTests(unittest.TestCase):
         (self.root / "clip.mp4").write_bytes(b"0123456789")
         (self.root / "notes.txt").write_text("hello", encoding="utf-8")
         (self.root / ".hidden").write_text("secret", encoding="utf-8")
+        (self.root / "destination").mkdir()
         self.server = create_server(self.root, 0, "test-secret")
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -34,8 +35,11 @@ class FileBridgeIntegrationTests(unittest.TestCase):
     def request(self, path: str, method: str = "GET", body: bytes | None = None, headers: dict | None = None):
         request_headers = {"Authorization": self.auth}
         request_headers.update(headers or {})
-        request = Request(self.base + path, data=body, headers=request_headers, method=method)
-        return urlopen(request)
+        return urlopen(Request(self.base + path, data=body, headers=request_headers, method=method))
+
+    def json_post(self, route: str, payload: dict):
+        body = json.dumps(payload).encode()
+        return self.request(route, "POST", body, {"Content-Length": str(len(body))})
 
     def test_requires_authentication(self) -> None:
         with self.assertRaises(HTTPError) as raised:
@@ -60,8 +64,7 @@ class FileBridgeIntegrationTests(unittest.TestCase):
         self.assertEqual((self.root / "incoming.txt").read_bytes(), b"payload")
 
     def test_uploads_nested_folder_path_and_decodes_names(self) -> None:
-        relative = "My%20Folder/sub%20folder/hello%20world.txt"
-        with self.request("/api/upload", "POST", b"data", {"X-Relative-Path": relative, "Content-Length": "4"}) as response:
+        with self.request("/api/upload", "POST", b"data", {"X-Relative-Path": "My%20Folder/sub%20folder/hello%20world.txt", "Content-Length": "4"}) as response:
             self.assertTrue(json.loads(response.read())["ok"])
         self.assertEqual((self.root / "My Folder" / "sub folder" / "hello world.txt").read_bytes(), b"data")
 
@@ -76,16 +79,24 @@ class FileBridgeIntegrationTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 400)
 
     def test_creates_renames_and_deletes_folder(self) -> None:
-        body = json.dumps({"path": "", "name": "new-folder"}).encode()
-        with self.request("/api/folder", "POST", body, {"Content-Length": str(len(body))}) as response:
+        with self.json_post("/api/folder", {"path": "", "name": "new-folder"}) as response:
             self.assertTrue(json.loads(response.read())["ok"])
-        body = json.dumps({"path": "new-folder", "name": "renamed"}).encode()
-        with self.request("/api/rename", "POST", body, {"Content-Length": str(len(body))}) as response:
+        with self.json_post("/api/rename", {"path": "new-folder", "name": "renamed"}) as response:
             self.assertTrue(json.loads(response.read())["ok"])
-        body = json.dumps({"path": "renamed"}).encode()
-        with self.request("/api/delete", "POST", body, {"Content-Length": str(len(body))}) as response:
+        with self.json_post("/api/delete", {"path": "renamed"}) as response:
             self.assertTrue(json.loads(response.read())["ok"])
         self.assertFalse((self.root / "renamed").exists())
+
+    def test_moves_item_between_folders(self) -> None:
+        with self.json_post("/api/move", {"path": "notes.txt", "destination": "destination"}) as response:
+            self.assertTrue(json.loads(response.read())["ok"])
+        self.assertTrue((self.root / "destination" / "notes.txt").exists())
+
+    def test_rejects_move_into_descendant(self) -> None:
+        (self.root / "parent" / "child").mkdir(parents=True)
+        with self.assertRaises(HTTPError) as raised:
+            self.json_post("/api/move", {"path": "parent", "destination": "parent/child"})
+        self.assertEqual(raised.exception.code, 400)
 
     def test_file_preview_is_inline(self) -> None:
         with self.request("/api/file?path=notes.txt") as response:

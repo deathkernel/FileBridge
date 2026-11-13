@@ -1,6 +1,6 @@
 # FileBridge
 
-FileBridge is a Windows desktop utility for authenticated file access and transfer over a trusted local Wi-Fi network. The PC selects one folder and runs the server; a phone or another device opens the displayed LAN address.
+FileBridge is a Windows desktop utility for authenticated file access and transfer over a trusted local Wi-Fi network. Select one folder on the PC, start the server, and open the displayed LAN address from a phone or another device.
 
 ## Phase 1 — Browse and preview
 
@@ -9,14 +9,15 @@ FileBridge is a Windows desktop utility for authenticated file access and transf
 - HTTP byte-range support for media seeking.
 - File metadata and responsive mobile UI.
 
-## Phase 2 — Transfer and manage
+## Phase 2 — Secure transfer and file management
 
 - A fresh random session password is generated every time the desktop server starts.
-- HTTP Basic authentication protects browser routes and file operations.
+- HTTP Basic authentication protects browser routes and all file operations.
 - Upload individual or multiple files; upload a folder while preserving its relative folder structure.
 - Download individual files and ZIP archives of folders.
-- Create folders, rename items, and permanently delete files or folders.
-- Uploads are written to a temporary file and atomically moved into place; existing files are never silently overwritten.
+- Create folders, rename and move items, and permanently delete files or folders.
+- Uploads use temporary files and atomic placement; existing files are never silently overwritten.
+- Upload progress is shown in the browser; uploads are limited to 5 GB per file.
 - Standard-library-only Python implementation.
 
 ## Requirements and run
@@ -33,19 +34,17 @@ Choose a folder, start the server, then open the shown address on your phone. En
 
 ## Safety
 
-- Use only a trusted private Wi-Fi network. The session password is shown on the PC; do not share it with untrusted devices.
-- HTTP Basic authentication is not encryption. Anyone able to observe unencrypted traffic on the LAN may be able to capture credentials and files. Do not use this over public Wi-Fi or the internet.
-- Never configure router port forwarding for FileBridge.
-- Allow Python through Windows Firewall on Private networks only.
-- Uploads, renames, and deletes modify the selected folder. Deleted files are not moved to the recycle bin.
-- Uploads refuse to overwrite an existing file. A folder upload may partially complete if the connection fails; retry after checking the destination.
-- Upload size is limited to 5 GB per file.
+- Use only a trusted private Wi-Fi network. Share the session password only with your own devices.
+- HTTP Basic authentication is not encryption. Credentials and files travel over plain HTTP and can be observed on an untrusted network. Do not use on public Wi-Fi or the internet.
+- Never configure router port forwarding. Allow Python through Windows Firewall on Private networks only.
+- Uploads, moves, renames, and deletes modify the selected folder. Deletions are permanent.
+- Uploads refuse to overwrite an existing file. A folder upload can partially complete if interrupted; check the destination before retrying.
 - ZIP archives are assembled in a temporary file on the PC and removed after sending.
 - This is a personal LAN utility, not a hardened multi-user or internet-facing server. Filesystem protections reduce path escape risks but do not eliminate every filesystem race condition.
 
-## Browser support
+## Browser notes
 
-Folder upload uses the browser's directory-selection feature (commonly available in Chromium browsers). Video and audio playback depends on codecs supported by the browser. Large uploads may be interrupted if the phone sleeps or leaves Wi-Fi range.
+Folder upload uses the browser's directory-selection feature (commonly supported in Chromium browsers). Playback depends on browser codecs. Large transfers may be interrupted if a phone sleeps or leaves Wi-Fi range.
 
 ## Tests
 

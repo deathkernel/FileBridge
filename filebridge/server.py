@@ -59,15 +59,11 @@ def _safe_name(name: str) -> str:
 def _file_metadata(path: Path, relative_path: str) -> dict[str, Any]:
     info = path.stat()
     mime_type, _ = mimetypes.guess_type(path.name)
-    return {
-        "name": path.name,
-        "path": relative_path.replace(os.sep, "/"),
-        "kind": "directory" if stat.S_ISDIR(info.st_mode) else "file",
-        "size": info.st_size if stat.S_ISREG(info.st_mode) else None,
-        "modified": datetime.fromtimestamp(info.st_mtime).astimezone().isoformat(timespec="seconds"),
-        "mime": mime_type or "application/octet-stream",
-        "extension": path.suffix.lower(),
-    }
+    return {"name": path.name, "path": relative_path.replace(os.sep, "/"),
+            "kind": "directory" if stat.S_ISDIR(info.st_mode) else "file",
+            "size": info.st_size if stat.S_ISREG(info.st_mode) else None,
+            "modified": datetime.fromtimestamp(info.st_mtime).astimezone().isoformat(timespec="seconds"),
+            "mime": mime_type or "application/octet-stream", "extension": path.suffix.lower()}
 
 
 def _parse_range(value: str, file_size: int) -> tuple[int, int] | None:
@@ -181,14 +177,11 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
             if not self._authorized():
                 return
             route = urlsplit(self.path).path
-            if route == "/api/upload":
-                self._upload_file()
-            elif route == "/api/folder":
-                self._create_folder()
-            elif route == "/api/rename":
-                self._rename()
-            elif route == "/api/delete":
-                self._delete()
+            operations = {"/api/upload": self._upload_file, "/api/folder": self._create_folder,
+                          "/api/rename": self._rename, "/api/delete": self._delete, "/api/move": self._move}
+            operation = operations.get(route)
+            if operation:
+                operation()
             else:
                 self._send_json({"error": "Unknown operation."}, 404)
 
@@ -358,8 +351,7 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
                 source = resolve_shared_path(root, str(data.get("path", "")))
                 if source == root or not source.exists():
                     raise ValueError("Item not found.")
-                name = _safe_name(str(data.get("name", "")))
-                target = source.with_name(name)
+                target = source.with_name(_safe_name(str(data.get("name", ""))))
                 if target.exists():
                     raise FileExistsError
                 os.rename(source, target)
@@ -368,6 +360,32 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
                 self._send_json({"error": "An item with this name already exists."}, 409)
             except (ValueError, FileAccessError, OSError) as exc:
                 self._send_json({"error": str(exc) or "Could not rename item."}, 400)
+
+        def _move(self) -> None:
+            try:
+                data = self._json_body()
+                source = resolve_shared_path(root, str(data.get("path", "")))
+                destination = resolve_shared_path(root, str(data.get("destination", "")))
+                if source == root or not source.exists() or not destination.is_dir():
+                    raise ValueError("Source item or destination folder is invalid.")
+                if source.is_dir() and destination == source:
+                    raise ValueError("A folder cannot be moved into itself.")
+                try:
+                    destination.relative_to(source)
+                    if source.is_dir():
+                        raise ValueError("A folder cannot be moved inside itself.")
+                except ValueError as exc:
+                    if str(exc) == "A folder cannot be moved inside itself.":
+                        raise
+                target = destination / source.name
+                if target.exists():
+                    raise FileExistsError
+                os.rename(source, target)
+                self._send_json({"ok": True, "path": target.relative_to(root).as_posix()})
+            except FileExistsError:
+                self._send_json({"error": "An item with this name already exists in the destination."}, 409)
+            except (ValueError, FileAccessError, OSError) as exc:
+                self._send_json({"error": str(exc) or "Could not move item."}, 400)
 
         def _delete(self) -> None:
             try:
