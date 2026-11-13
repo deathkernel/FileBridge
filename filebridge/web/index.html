@@ -17,6 +17,8 @@
 <button id="newFolder" class="tool-button" type="button">New folder</button><button id="zipFolder" class="tool-button" type="button">Download folder ZIP</button>
 </div>
 <p id="uploadStatus" class="upload-status" hidden></p>
+<div id="dropZone" class="drop-zone">Drop files here to add them to the upload queue</div>
+<div id="uploadStatus" class="upload-panel" hidden><div class="upload-heading"><strong>Transfer queue</strong><div><button id="pauseUploads" class="tool-button small" type="button">Pause</button><button id="resumeUploads" class="tool-button small" type="button" hidden>Resume</button><button id="cancelUploads" class="tool-button small danger" type="button">Cancel all</button></div></div><div id="transferList"></div></div>
 <div class="folder-heading"><div><h2 id="folder-title">Shared folder</h2><p id="item-count" class="muted">Loading files…</p></div><button id="refresh" class="icon-button" type="button" title="Refresh" aria-label="Refresh">↻</button></div>
 <div id="error" class="error-message" role="alert" hidden></div><div id="loading" class="loading-state">Loading files…</div>
 <div id="empty" class="empty-state" hidden><div class="empty-icon">▤</div><h3>No files found</h3><p>Upload files or create a folder to get started.</p></div><div id="file-list" class="file-list" aria-live="polite"></div>
