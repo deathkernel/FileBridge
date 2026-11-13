@@ -17,7 +17,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import parse_qs, quote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 CHUNK_SIZE = 1024 * 1024
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024
@@ -89,11 +89,7 @@ def _parse_range(value: str, file_size: int) -> tuple[int, int] | None:
     return start, min(end, file_size - 1)
 
 
-def create_server(
-    shared_folder: str | Path,
-    port: int = 6789,
-    password: str | None = None,
-) -> ThreadingHTTPServer:
+def create_server(shared_folder: str | Path, port: int = 6789, password: str | None = None) -> ThreadingHTTPServer:
     """Create an authenticated HTTP server. Supply a strong per-session password."""
     root = Path(shared_folder).expanduser().resolve(strict=True)
     if not root.is_dir():
@@ -166,7 +162,8 @@ def create_server(
             elif route == "/api/files":
                 self._list_directory(self._query_path())
             elif route == "/api/file":
-                self._serve_file(self._query_path(), attachment=True)
+                download = parse_qs(urlsplit(self.path).query).get("download", ["0"])[0] == "1"
+                self._serve_file(self._query_path(), attachment=download)
             elif route == "/api/archive":
                 self._serve_archive(self._query_path())
             else:
@@ -195,14 +192,9 @@ def create_server(
             else:
                 self._send_json({"error": "Unknown operation."}, 404)
 
-        def do_PUT(self) -> None:  # noqa: N802
-            self.do_POST()
-
-        def do_PATCH(self) -> None:  # noqa: N802
-            self.do_POST()
-
-        def do_DELETE(self) -> None:  # noqa: N802
-            self.do_POST()
+        do_PUT = do_POST
+        do_PATCH = do_POST
+        do_DELETE = do_POST
 
         def _serve_asset(self, filename: str, content_type: str) -> None:
             try:
@@ -302,17 +294,23 @@ def create_server(
                 if not destination.is_dir():
                     self._send_json({"error": "Upload destination is not a folder."}, 400)
                     return
-                relative = self.headers.get("X-Relative-Path", self.headers.get("X-File-Name", ""))
+                relative = unquote(self.headers.get("X-Relative-Path", self.headers.get("X-File-Name", "")))
                 parts = PurePosixPath(relative.replace("\\", "/")).parts
                 if not parts or any(part in ("", ".", "..") for part in parts):
                     self._send_json({"error": "Invalid upload path."}, 400)
                     return
                 clean_parts = [_safe_name(part) for part in parts]
-                target = destination.joinpath(*clean_parts)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target_parent = resolve_shared_path(root, target.parent.relative_to(root).as_posix())
-                if target_parent != target.parent.resolve() or not target_parent.is_dir():
+                target_parent = destination
+                for folder_name in clean_parts[:-1]:
+                    next_folder = resolve_shared_path(root, (target_parent / folder_name).relative_to(root).as_posix())
+                    if next_folder.exists() and not next_folder.is_dir():
+                        raise ValueError("An upload folder name conflicts with an existing file.")
+                    next_folder.mkdir(exist_ok=True)
+                    target_parent = resolve_shared_path(root, next_folder.relative_to(root).as_posix())
+                target_parent = resolve_shared_path(root, target_parent.relative_to(root).as_posix())
+                if not target_parent.is_dir():
                     raise FileAccessError("Invalid upload destination.")
+                target = target_parent / clean_parts[-1]
                 if target.exists():
                     self._send_json({"error": "A file or folder with this name already exists."}, 409)
                     return
@@ -347,9 +345,8 @@ def create_server(
                 name = _safe_name(str(data.get("name", "")))
                 if not parent.is_dir():
                     raise ValueError("Parent folder not found.")
-                target = parent / name
-                target.mkdir()
-                self._send_json({"ok": True, "path": target.relative_to(root).as_posix()})
+                (parent / name).mkdir()
+                self._send_json({"ok": True})
             except FileExistsError:
                 self._send_json({"error": "An item with this name already exists."}, 409)
             except (ValueError, FileAccessError, OSError) as exc:
