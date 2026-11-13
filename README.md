@@ -51,3 +51,17 @@ Folder upload uses the browser's directory-selection feature (commonly supported
 ```powershell
 py -3 -m unittest discover -v
 ```
+
+## Phase 3 — Transfer experience
+
+- Chunked upload API uses 4 MiB blocks.
+- Pause and resume work at confirmed chunk boundaries while the page and server stay active.
+- Browser queue shows per-file progress and approximate throughput.
+- Drag-and-drop adds files to the queue.
+- Directory uploads retain nested relative paths.
+- The desktop app displays a QR code for the local URL. The session password is never embedded in the QR code.
+
+## Windows executable
+
+GitHub Actions runs a Windows packaging job on pushes to main. Open Actions, choose the latest successful workflow run, and download the FileBridge-Windows-x64 artifact. It is an unsigned portable EXE, not an installer.
+
