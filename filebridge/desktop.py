@@ -5,6 +5,7 @@ from __future__ import annotations
 import secrets
 import socket
 import threading
+import tempfile
 import tkinter as tk
 import webbrowser
 from pathlib import Path
@@ -49,6 +50,8 @@ class FileBridgeApp:
         self.server_thread: threading.Thread | None = None
         self.url = ""
         self.password = ""
+        self.qr_image: tk.PhotoImage | None = None
+        self.qr_temp_path: Path | None = None
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -91,6 +94,10 @@ class FileBridgeApp:
         ttk.Label(status, text="SESSION PASSWORD / PIN", style="Muted.TLabel").pack(anchor="w", pady=(14, 4))
         self.password_label = ttk.Label(status, text="Generated when server starts", style="Muted.TLabel")
         self.password_label.pack(anchor="w")
+        self.qr_label = ttk.Label(status, text="QR code appears when server starts.", style="Muted.TLabel")
+        self.qr_label.pack(anchor="w", pady=(12, 0))
+        self.qr_image_label = ttk.Label(status, style="Muted.TLabel")
+        self.qr_image_label.pack(anchor="w", pady=(6, 0))
         actions = ttk.Frame(status, style="Panel.TFrame")
         actions.pack(anchor="w", pady=(12, 0))
         self.open_button = ttk.Button(actions, text="Open in browser", command=self._open_browser, state="disabled")
@@ -127,10 +134,26 @@ class FileBridgeApp:
         self.status_label.configure(text="Running · authenticated")
         self.url_label.configure(text=f"Phone address (same Wi-Fi):\n{self.url}")
         self.password_label.configure(text=self.password)
+        self._show_qr_code()
         self.start_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
         self.open_button.configure(state="normal")
         self.copy_button.configure(state="normal")
+
+    def _show_qr_code(self) -> None:
+        try:
+            import qrcode
+            image = qrcode.make(self.url)
+            handle = tempfile.NamedTemporaryFile(prefix="filebridge-qr-", suffix=".png", delete=False)
+            self.qr_temp_path = Path(handle.name)
+            handle.close()
+            image.save(self.qr_temp_path)
+            self.qr_image = tk.PhotoImage(file=str(self.qr_temp_path))
+            self.qr_image_label.configure(image=self.qr_image, text="")
+            self.qr_label.configure(text="Scan this QR code to open FileBridge. Enter the session password when asked.")
+        except (ImportError, OSError, tk.TclError):
+            self.qr_label.configure(text="QR unavailable. Install requirements.txt to enable QR display.")
+            self.qr_image_label.configure(image="", text="")
 
     def _stop_server(self) -> None:
         server = self.server
@@ -144,6 +167,12 @@ class FileBridgeApp:
         self.server_thread = None
         self.url = ""
         self.password = ""
+        self.qr_image = None
+        self.qr_image_label.configure(image="", text="")
+        self.qr_label.configure(text="QR code appears when server starts.")
+        if self.qr_temp_path:
+            self.qr_temp_path.unlink(missing_ok=True)
+            self.qr_temp_path = None
         self.status_label.configure(text="Stopped")
         self.url_label.configure(text="Start the server to see your phone address.")
         self.password_label.configure(text="Generated when server starts")
