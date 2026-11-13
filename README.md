@@ -1,68 +1,53 @@
 # FileBridge
 
-FileBridge is a lightweight, read-only local Wi-Fi file browser for Windows. Select a folder on your PC, start the desktop server, and browse or preview its contents from a phone or another device on the same trusted Wi-Fi network.
+FileBridge is a Windows desktop utility for authenticated file access and transfer over a trusted local Wi-Fi network. The PC selects one folder and runs the server; a phone or another device opens the displayed LAN address.
 
-## Phase 1: Read and view
+## Phase 1 — Browse and preview
 
-- Desktop control panel to select one shared folder and start/stop the server.
-- Responsive browser interface for phones, tablets and PCs.
-- Browse nested folders and search names in the current folder.
-- Preview images, PDFs and text-based files.
-- Stream browser-supported video and audio with HTTP byte-range seeking.
-- Metadata display (file size and modified date).
-- No uploads, downloads, edits, renames, moves or deletes.
-- Python standard library only; no cloud account, database or third-party package.
+- Browse nested folders and search names.
+- Preview images, PDFs, text, and browser-supported media.
+- HTTP byte-range support for media seeking.
+- File metadata and responsive mobile UI.
 
-## Requirements
+## Phase 2 — Transfer and manage
 
-- Windows 10/11 (Tkinter must be included with Python).
-- Python 3.10 or newer.
-- Phone and PC connected to the same trusted private Wi-Fi network.
+- A fresh random session password is generated every time the desktop server starts.
+- HTTP Basic authentication protects browser routes and file operations.
+- Upload individual or multiple files; upload a folder while preserving its relative folder structure.
+- Download individual files and ZIP archives of folders.
+- Create folders, rename items, and permanently delete files or folders.
+- Uploads are written to a temporary file and atomically moved into place; existing files are never silently overwritten.
+- Standard-library-only Python implementation.
 
-## Run on Windows
+## Requirements and run
 
-Open PowerShell in the repository folder:
+- Windows 10/11 and Python 3.10+ with Tkinter.
+- Phone and PC on the same trusted private Wi-Fi network.
 
 ```powershell
-py -3 --version
+git pull origin main
 py -3 main.py
 ```
 
-1. Click **Choose folder** and select the folder you want to share.
-2. Click **Start server**.
-3. Open the displayed LAN URL on your phone, for example `http://192.168.1.20:6789`.
-4. Browse folders and preview supported files.
-5. Stop the server from the desktop control panel when finished.
+Choose a folder, start the server, then open the shown address on your phone. Enter username `filebridge` and the one-session password displayed in the desktop app.
 
-## Network safety
+## Safety
 
-- FileBridge listens on `0.0.0.0` so devices on the same LAN can connect.
-- Allow Python/FileBridge through Windows Firewall on **Private networks only**.
-- Do not expose port 6789 through router port forwarding.
-- Do not use this unauthenticated HTTP server on public or untrusted Wi-Fi.
-- Share only a folder whose contents you are comfortable making visible to devices on that Wi-Fi.
-- Keep the PC awake and connected to Wi-Fi while the server is running.
-- Stop the server when you are finished.
+- Use only a trusted private Wi-Fi network. The session password is shown on the PC; do not share it with untrusted devices.
+- HTTP Basic authentication is not encryption. Anyone able to observe unencrypted traffic on the LAN may be able to capture credentials and files. Do not use this over public Wi-Fi or the internet.
+- Never configure router port forwarding for FileBridge.
+- Allow Python through Windows Firewall on Private networks only.
+- Uploads, renames, and deletes modify the selected folder. Deleted files are not moved to the recycle bin.
+- Uploads refuse to overwrite an existing file. A folder upload may partially complete if the connection fails; retry after checking the destination.
+- Upload size is limited to 5 GB per file.
+- ZIP archives are assembled in a temporary file on the PC and removed after sending.
+- This is a personal LAN utility, not a hardened multi-user or internet-facing server. Filesystem protections reduce path escape risks but do not eliminate every filesystem race condition.
 
-## Read-only and security behavior
+## Browser support
 
-- The selected folder is the filesystem boundary for browsing and reads.
-- Parent traversal and symlinks resolving outside the selected folder are rejected.
-- Hidden entries are omitted from listings.
-- Only regular files and directories are listed.
-- HTTP write methods are explicitly rejected with `405 Method Not Allowed`.
-- File responses are inline and support byte ranges for media seeking.
-- FileBridge does not alter or copy the shared files.
+Folder upload uses the browser's directory-selection feature (commonly available in Chromium browsers). Video and audio playback depends on codecs supported by the browser. Large uploads may be interrupted if the phone sleeps or leaves Wi-Fi range.
 
-This is a personal LAN utility, not an internet-facing file server. The current HTTP connection has no login or encryption; use it only on a trusted private network. Filesystem checks reduce path-escape risk, but do not treat this as a hardened multi-user service.
-
-## Browser compatibility
-
-Playback depends on the browser and media codec. MP4 with H.264/AAC is widely supported; some MKV/AVI codecs may not play in a mobile browser. PDF preview also depends on built-in browser PDF support. Unsupported formats remain visible but cannot be previewed in the browser.
-
-## Development
-
-Run tests:
+## Tests
 
 ```powershell
 py -3 -m unittest discover -v

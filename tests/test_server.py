@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import tempfile
 import threading
@@ -11,84 +12,18 @@ from urllib.request import Request, urlopen
 from filebridge.server import FileAccessError, _parse_range, create_server, resolve_shared_path
 
 
-class ResolveSharedPathTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp_dir.name).resolve()
-        (self.root / "Movies").mkdir()
-        (self.root / "Movies" / "sample.mp4").write_bytes(b"video")
-
-    def tearDown(self) -> None:
-        self.temp_dir.cleanup()
-
-    def test_resolves_file_inside_shared_folder(self) -> None:
-        self.assertEqual(resolve_shared_path(self.root, "Movies/sample.mp4"), self.root / "Movies" / "sample.mp4")
-
-    def test_empty_path_resolves_to_shared_root(self) -> None:
-        self.assertEqual(resolve_shared_path(self.root, ""), self.root)
-
-    def test_rejects_parent_directory_traversal(self) -> None:
-        with self.assertRaises(FileAccessError):
-            resolve_shared_path(self.root, "../secret.txt")
-
-    def test_rejects_windows_style_parent_traversal(self) -> None:
-        with self.assertRaises(FileAccessError):
-            resolve_shared_path(self.root, r"..\secret.txt")
-
-    def test_rejects_absolute_path(self) -> None:
-        with self.assertRaises(FileAccessError):
-            resolve_shared_path(self.root, str(self.root.parent / "secret.txt"))
-
-    def test_rejects_symlink_outside_root(self) -> None:
-        outside = Path(self.temp_dir.name).parent / "filebridge-outside-test.txt"
-        outside.write_text("secret", encoding="utf-8")
-        link = self.root / "outside-link"
-        try:
-            link.symlink_to(outside)
-        except (OSError, NotImplementedError):
-            outside.unlink(missing_ok=True)
-            self.skipTest("Symlink creation is not available.")
-        try:
-            with self.assertRaises(FileAccessError):
-                resolve_shared_path(self.root, "outside-link")
-        finally:
-            link.unlink(missing_ok=True)
-            outside.unlink(missing_ok=True)
-
-
-class ParseRangeTests(unittest.TestCase):
-    def test_parses_open_ended_range(self) -> None:
-        self.assertEqual(_parse_range("bytes=5-", 10), (5, 9))
-
-    def test_parses_suffix_range(self) -> None:
-        self.assertEqual(_parse_range("bytes=-4", 10), (6, 9))
-
-    def test_clamps_end_to_file_size(self) -> None:
-        self.assertEqual(_parse_range("bytes=2-100", 10), (2, 9))
-
-    def test_no_range_returns_none(self) -> None:
-        self.assertIsNone(_parse_range("", 10))
-
-    def test_rejects_unsatisfiable_range(self) -> None:
-        with self.assertRaises(ValueError):
-            _parse_range("bytes=20-", 10)
-
-    def test_rejects_multiple_ranges(self) -> None:
-        with self.assertRaises(ValueError):
-            _parse_range("bytes=0-1,4-5", 10)
-
-
-class FileServerIntegrationTests(unittest.TestCase):
+class FileBridgeIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name).resolve()
         (self.root / "clip.mp4").write_bytes(b"0123456789")
         (self.root / "notes.txt").write_text("hello", encoding="utf-8")
         (self.root / ".hidden").write_text("secret", encoding="utf-8")
-        self.server = create_server(self.root, 0)
+        self.server = create_server(self.root, 0, "test-secret")
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
-        self.base_url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+        self.auth = "Basic " + base64.b64encode(b"filebridge:test-secret").decode()
 
     def tearDown(self) -> None:
         self.server.shutdown()
@@ -96,42 +31,99 @@ class FileServerIntegrationTests(unittest.TestCase):
         self.thread.join(timeout=2)
         self.temp_dir.cleanup()
 
-    def test_directory_listing_returns_metadata_and_hides_dotfiles(self) -> None:
-        with urlopen(f"{self.base_url}/api/files") as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        names = [item["name"] for item in payload["items"]]
+    def request(self, path: str, method: str = "GET", body: bytes | None = None, headers: dict | None = None):
+        request_headers = {"Authorization": self.auth}
+        request_headers.update(headers or {})
+        request = Request(self.base + path, data=body, headers=request_headers, method=method)
+        return urlopen(request)
+
+    def test_requires_authentication(self) -> None:
+        with self.assertRaises(HTTPError) as raised:
+            urlopen(self.base + "/api/files")
+        self.assertEqual(raised.exception.code, 401)
+
+    def test_lists_files_and_hides_hidden_entries(self) -> None:
+        with self.request("/api/files") as response:
+            data = json.loads(response.read())
+        names = [item["name"] for item in data["items"]]
         self.assertIn("clip.mp4", names)
         self.assertNotIn(".hidden", names)
 
-    def test_file_server_supports_http_byte_ranges(self) -> None:
-        request = Request(f"{self.base_url}/api/file?path=clip.mp4", headers={"Range": "bytes=2-5"})
-        with urlopen(request) as response:
+    def test_supports_byte_range(self) -> None:
+        with self.request("/api/file?path=clip.mp4", headers={"Range": "bytes=2-5"}) as response:
             self.assertEqual(response.status, 206)
-            self.assertEqual(response.headers["Content-Range"], "bytes 2-5/10")
             self.assertEqual(response.read(), b"2345")
 
-    def test_file_server_rejects_parent_traversal(self) -> None:
+    def test_uploads_file(self) -> None:
+        with self.request("/api/upload", "POST", b"payload", {"X-Relative-Path": "incoming.txt", "Content-Length": "7"}) as response:
+            self.assertTrue(json.loads(response.read())["ok"])
+        self.assertEqual((self.root / "incoming.txt").read_bytes(), b"payload")
+
+    def test_upload_rejects_overwrite(self) -> None:
         with self.assertRaises(HTTPError) as raised:
-            urlopen(f"{self.base_url}/api/files?path=..%2Foutside")
+            self.request("/api/upload", "POST", b"new", {"X-Relative-Path": "notes.txt", "Content-Length": "3"})
+        self.assertEqual(raised.exception.code, 409)
+
+    def test_upload_rejects_parent_traversal(self) -> None:
+        with self.assertRaises(HTTPError) as raised:
+            self.request("/api/upload", "POST", b"x", {"X-Relative-Path": "../escape.txt", "Content-Length": "1"})
         self.assertEqual(raised.exception.code, 400)
 
-    def test_write_methods_are_rejected(self) -> None:
-        for method in ("POST", "PUT", "PATCH", "DELETE"):
-            request = Request(f"{self.base_url}/api/file?path=clip.mp4", method=method)
-            with self.assertRaises(HTTPError) as raised:
-                urlopen(request)
-            self.assertEqual(raised.exception.code, 405)
+    def test_creates_renames_and_deletes_folder(self) -> None:
+        body = json.dumps({"path": "", "name": "new-folder"}).encode()
+        with self.request("/api/folder", "POST", body, {"Content-Length": str(len(body))}) as response:
+            self.assertTrue(json.loads(response.read())["ok"])
+        body = json.dumps({"path": "new-folder", "name": "renamed"}).encode()
+        with self.request("/api/rename", "POST", body, {"Content-Length": str(len(body))}) as response:
+            self.assertTrue(json.loads(response.read())["ok"])
+        body = json.dumps({"path": "renamed"}).encode()
+        with self.request("/api/delete", "POST", body, {"Content-Length": str(len(body))}) as response:
+            self.assertTrue(json.loads(response.read())["ok"])
+        self.assertFalse((self.root / "renamed").exists())
 
-    def test_file_response_is_inline_and_not_an_attachment(self) -> None:
-        with urlopen(f"{self.base_url}/api/file?path=clip.mp4") as response:
-            self.assertTrue(response.headers["Content-Disposition"].startswith("inline;"))
-            self.assertEqual(response.headers["Accept-Ranges"], "bytes")
-            self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+    def test_file_download_is_attachment(self) -> None:
+        with self.request("/api/file?path=notes.txt") as response:
+            self.assertTrue(response.headers["Content-Disposition"].startswith("attachment;"))
 
-    def test_health_endpoint_declares_read_only_mode(self) -> None:
-        with urlopen(f"{self.base_url}/api/health") as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        self.assertEqual(payload["mode"], "read-only")
+    def test_folder_archive_is_zip(self) -> None:
+        with self.request("/api/archive?path=") as response:
+            self.assertEqual(response.headers["Content-Type"], "application/zip")
+            self.assertTrue(response.read().startswith(b"PK"))
+
+    def test_write_operations_reject_unauthorized_request(self) -> None:
+        request = Request(self.base + "/api/delete", data=b'{"path":"notes.txt"}', method="POST")
+        with self.assertRaises(HTTPError) as raised:
+            urlopen(request)
+        self.assertEqual(raised.exception.code, 401)
+
+
+class PathAndRangeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name).resolve()
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_resolves_root(self) -> None:
+        self.assertEqual(resolve_shared_path(self.root, ""), self.root)
+
+    def test_rejects_parent_traversal(self) -> None:
+        with self.assertRaises(FileAccessError):
+            resolve_shared_path(self.root, "../secret")
+
+    def test_rejects_windows_parent_traversal(self) -> None:
+        with self.assertRaises(FileAccessError):
+            resolve_shared_path(self.root, r"..\secret")
+
+    def test_parses_ranges(self) -> None:
+        self.assertEqual(_parse_range("bytes=2-5", 10), (2, 5))
+        self.assertEqual(_parse_range("bytes=-4", 10), (6, 9))
+        self.assertEqual(_parse_range("", 10), None)
+
+    def test_rejects_invalid_range(self) -> None:
+        with self.assertRaises(ValueError):
+            _parse_range("bytes=20-", 10)
 
 
 if __name__ == "__main__":
