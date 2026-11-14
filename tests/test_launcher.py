@@ -20,6 +20,14 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertIn("No folder selected", output.getvalue())
 
+    def test_requires_certificate_and_key_together(self) -> None:
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["main.py", "--tls-cert", "server.crt", "missing-folder"]):
+            with contextlib.redirect_stderr(output):
+                result = main.main()
+        self.assertEqual(result, 2)
+        self.assertIn("must be supplied together", output.getvalue())
+
     def test_rejects_missing_folder(self) -> None:
         output = io.StringIO()
         with patch.object(sys, "argv", ["main.py", "missing-folder"]):
