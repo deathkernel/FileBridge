@@ -272,8 +272,8 @@ export default function App() {
               <button className="subtle" onClick={togglePause} disabled={!transfers.some(item => item.status === "Uploading" || item.status === "Paused")}>
                 {paused ? <Play size={14} /> : <Pause size={14} />} {paused ? "Resume" : "Pause"}
               </button>
-              <button className="subtle" onClick={cancelUploads} disabled={!transfers.some(item => item.status === "Uploading" || item.status === "Paused" || item.status === "Preparing")}>Cancel</button>
-              <button className="subtle" onClick={() => setTransfers([])} disabled={transfers.some(item => item.status === "Uploading" || item.status === "Paused" || item.status === "Preparing")}>Clear</button>
+              <button className="subtle" onClick={cancelUploads} disabled={!transfers.some(item => item.status === "Uploading" || item.status === "Paused" || item.status === "Preparing" || item.status === "Queued")}>Cancel</button>
+              <button className="subtle" onClick={() => setTransfers([])} disabled={transfers.some(item => item.status === "Uploading" || item.status === "Paused" || item.status === "Preparing" || item.status === "Queued")}>Clear</button>
             </div></div>
             {!transfers.length ? <p className="muted">No active or recent transfers.</p> : transfers.map(item =>
               <div className="transfer-row" key={item.id}>
