@@ -41,6 +41,26 @@ class FileBridgeIntegrationTests(unittest.TestCase):
         body = json.dumps(payload).encode()
         return self.request(route, "POST", body, {"Content-Length": str(len(body))})
 
+    def test_health_endpoint(self) -> None:
+        with self.request("/api/health") as response:
+            payload = json.loads(response.read())
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["mode"], "authenticated")
+
+    @unittest.skipUnless(
+        (Path(__file__).resolve().parents[1] / "filebridge" / "web" / "index.html").exists(),
+        "Production web assets have not been built.",
+    )
+    def test_serves_production_web_entrypoint_and_assets(self) -> None:
+        for route, content_type in (
+            ("/", "text/html"),
+            ("/assets/styles.css", "text/css"),
+            ("/assets/app.js", "text/javascript"),
+        ):
+            with self.request(route) as response:
+                self.assertIn(content_type, response.headers.get("Content-Type", ""))
+                self.assertGreater(int(response.headers["Content-Length"]), 0)
+
     def test_requires_authentication(self) -> None:
         with self.assertRaises(HTTPError) as raised:
             urlopen(self.base + "/api/files")
