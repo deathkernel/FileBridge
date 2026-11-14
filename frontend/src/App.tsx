@@ -29,7 +29,14 @@ async function loadFiles(path: string) {
     "/api/files?" + new URLSearchParams({ path }),
   );
 }
-function duration(seconds: number | null) {\n  if (seconds === null || !Number.isFinite(seconds)) return "Calculating…";\n  if (seconds <= 0) return "Almost done";\n  const minutes = Math.floor(seconds / 60);\n  const remaining = Math.ceil(seconds % 60);\n  return minutes ? minutes + "m " + remaining + "s left" : remaining + "s left";\n}\nfunction size(value: number | null) {
+function duration(seconds: number | null) {
+  if (seconds === null || !Number.isFinite(seconds)) return "Calculating…";
+  if (seconds <= 0) return "Almost done";
+  const minutes = Math.floor(seconds / 60);
+  const remaining = Math.ceil(seconds % 60);
+  return minutes ? minutes + "m " + remaining + "s left" : remaining + "s left";
+}
+function size(value: number | null) {
   if (value === null) return "—";
   if (!value) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -54,13 +61,22 @@ export default function App() {
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [paused, setPaused] = useState(false);
   const [preview, setPreview] = useState<Item | null>(null);
-  const [dragging, setDragging] = useState(false);\n  const [sortBy, setSortBy] = useState<"name" | "size" | "modified">("name");\n  const [lightTheme, setLightTheme] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [sortBy, setSortBy] = useState<"name" | "size" | "modified">("name");
+  const [lightTheme, setLightTheme] = useState(false);
   const pauseRef = useRef(false);
   const cancelRef = useRef(false);
   const query = useQuery({ queryKey: ["files", path], queryFn: () => loadFiles(path) });
   const items = useMemo(
-    () => (query.data?.items ?? []).filter(item => item.name.toLowerCase().includes(search.toLowerCase())),
-    [query.data, search],
+    () => (query.data?.items ?? [])
+      .filter(item => item.name.toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => {
+        if (a.kind !== b.kind) return a.kind === "directory" ? -1 : 1;
+        if (sortBy === "size") return (b.size ?? -1) - (a.size ?? -1);
+        if (sortBy === "modified") return b.modified.localeCompare(a.modified);
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      }),
+    [query.data, search, sortBy],
   );
   const crumbs = path ? path.split("/").filter(Boolean) : [];
 
@@ -206,7 +222,8 @@ export default function App() {
             </div><div className="tools">
               <label className="search"><Search size={16} /><input placeholder="Search files..." value={search} onChange={event => setSearch(event.target.value)} /></label>
               <button className="icon" aria-label="List view" onClick={() => setGrid(false)}><List /></button>
-              <button className="icon" aria-label="Grid view" onClick={() => setGrid(true)}><LayoutGrid /></button>\n              <select className="sort-select" aria-label="Sort files" value={sortBy} onChange={event => setSortBy(event.target.value as typeof sortBy)}><option value="name">Name</option><option value="size">Size</option><option value="modified">Modified</option></select>
+              <button className="icon" aria-label="Grid view" onClick={() => setGrid(true)}><LayoutGrid /></button>
+              <select className="sort-select" aria-label="Sort files" value={sortBy} onChange={event => setSortBy(event.target.value as typeof sortBy)}><option value="name">Name</option><option value="size">Size</option><option value="modified">Modified</option></select>
               <button className="icon" aria-label="Refresh" onClick={() => void query.refetch()}><RefreshCw /></button>
             </div></div>
             <div className="subbar"><span>{items.length} items</span><div>
