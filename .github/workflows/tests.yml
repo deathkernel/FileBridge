@@ -1,4 +1,4 @@
-name: Tests and Windows build
+name: Web app and backend checks
 
 on:
   push:
@@ -29,33 +29,5 @@ jobs:
         run: npm run build
       - name: Compile Python sources
         run: python -m compileall -q .
-      - name: Run unit tests
+      - name: Run unit and integration tests
         run: python -m unittest discover -v
-
-  windows-build:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')))
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Install Python build requirements
-        run: python -m pip install -r requirements.txt pyinstaller
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm install
-      - name: Build React web app
-        working-directory: frontend
-        run: npm run build
-      - name: Build Windows executable
-        run: pyinstaller --noconfirm --clean --onefile --windowed --name FileBridge --add-data "filebridge/web;filebridge/web" main.py
-      - name: Upload Windows executable
-        uses: actions/upload-artifact@v4
-        with:
-          name: FileBridge-Windows-x64
-          path: dist/FileBridge.exe
-          if-no-files-found: error
