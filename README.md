@@ -54,6 +54,16 @@ Optional arguments:
 py -3 main.py --port 6789 --no-browser "C:\Users\YourName\Documents"
 ```
 
+### HTTPS (optional)
+
+For encrypted browser-to-server traffic, provide a TLS certificate and its private key:
+
+```powershell
+py -3 main.py --tls-cert "C:\certs\filebridge.crt" --tls-key "C:\certs\filebridge.key" "C:\Users\YourName\Documents"
+```
+
+Use a certificate whose Subject Alternative Names cover the LAN hostname or IP address used by your devices, and install/trust its issuing CA on those devices. A self-signed or mismatched certificate will trigger browser warnings. Without these options, FileBridge uses HTTP.
+
 The terminal displays:
 - Local browser URL.
 - LAN URL for your phone or another device.
@@ -65,7 +75,8 @@ The local browser opens automatically unless `--no-browser` is supplied. Enter t
 ## Security and safe use
 
 - Use FileBridge only on a trusted private network. Do not expose the port to the public internet.
-- HTTP Basic authentication is not encryption. Credentials and file contents travel over plain HTTP. Do not use public Wi-Fi or untrusted networks.
+- Without the optional TLS certificate/key arguments, HTTP Basic authentication is not encryption. Credentials and file contents travel over plain HTTP. Do not use public Wi-Fi or untrusted networks.
+- HTTPS requires a valid certificate trusted by every connecting device. TLS protects traffic in transit but does not turn this personal LAN utility into an internet-facing service.
 - Do not configure router port forwarding.
 - Allow Python through Windows Firewall on Private networks only, if Windows asks.
 - Uploads, moves, renames, and deletes modify the selected shared folder. Deletions are permanent.
