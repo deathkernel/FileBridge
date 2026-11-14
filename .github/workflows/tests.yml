@@ -1,5 +1,12 @@
 name: Web app and backend checks
 
+permissions:
+  contents: read
+
+concurrency:
+  group: filebridge-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main, "feat/**"]
@@ -11,6 +18,29 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Python requirements
+        run: python -m pip install -r requirements.txt
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install
+      - name: Build React web app
+        working-directory: frontend
+        run: npm run build
+      - name: Compile Python sources
+        run: python -m compileall -q .
+      - name: Run unit and integration tests
+        run: python -m unittest discover -v
+
+  windows-test:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
