@@ -21,3 +21,6 @@
 .shell.light .preview-modal{background:#fff;border-color:#dce3ef}.shell.light .preview-top,.shell.light .preview-bottom{border-color:#e5eaf2}.shell.light .preview-top strong{color:#1c2940}.shell.light .preview-top small{color:#71809a}
 .shell.light .drop-overlay{background:#f4f6fbee;color:#263a5c}
 @media(max-width:650px){.header-actions{gap:6px}.header-actions .auth{display:none}.sort-select{max-width:90px}}
+
+.table-head,.file-row{grid-template-columns:minmax(0,1fr) 90px 130px minmax(128px,auto)}
+@media(max-width:650px){.table-head,.file-row{grid-template-columns:minmax(0,1fr) 52px minmax(118px,auto)}}
