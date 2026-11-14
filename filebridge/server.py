@@ -277,6 +277,11 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
                         self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
                     disposition = "attachment" if attachment else "inline"
                     self.send_header("Content-Disposition", f"{disposition}; filename*=UTF-8''{quote(file_path.name)}")
+                    self.send_header(
+                        "Content-Security-Policy",
+                        "sandbox; default-src 'none'; img-src 'self' data: blob:; "
+                        "media-src 'self' blob:; style-src 'unsafe-inline'",
+                    )
                     self.end_headers()
                     if self.command == "HEAD":
                         return
