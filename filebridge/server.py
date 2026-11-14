@@ -153,9 +153,9 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
             if route == "/":
                 self._serve_asset("index.html", "text/html; charset=utf-8")
             elif route == "/assets/styles.css":
-                self._serve_asset("styles.css", "text/css; charset=utf-8")
+                self._serve_asset("assets/styles.css", "text/css; charset=utf-8")
             elif route == "/assets/app.js":
-                self._serve_asset("app.js", "text/javascript; charset=utf-8")
+                self._serve_asset("assets/app.js", "text/javascript; charset=utf-8")
             elif route == "/api/health":
                 self._send_json({"status": "ok", "name": "FileBridge", "mode": "authenticated"})
             elif route == "/api/files":
