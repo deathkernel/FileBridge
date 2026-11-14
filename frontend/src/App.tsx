@@ -4,14 +4,14 @@ import { motion } from "framer-motion";
 import {
   ArrowDownToLine, CloudUpload, File as FileIcon, FileImage, FileText, Film,
   Folder, FolderPlus, HardDrive, LayoutGrid, List, RefreshCw, Search,
-  ShieldCheck, Smartphone, Wifi, X, Pencil, Trash2, Move, Pause, Play,
+  ShieldCheck, Smartphone, Wifi, X, Pencil, Trash2, Move, Pause, Play, Sun, Moon,
 } from "lucide-react";
 
 type Item = {
   name: string; path: string; kind: "file" | "directory"; size: number | null;
   modified: string; mime: string; extension: string;
 };
-type Transfer = { id: string; name: string; size: number; sent: number; status: string; speed: number };
+type Transfer = { id: string; name: string; size: number; sent: number; status: string; speed: number; eta: number | null };
 type UploadSession = { upload_id: string; chunk_size: number };
 
 async function api<T = any>(url: string, init: RequestInit = {}): Promise<T> {
@@ -29,7 +29,7 @@ async function loadFiles(path: string) {
     "/api/files?" + new URLSearchParams({ path }),
   );
 }
-function size(value: number | null) {
+function duration(seconds: number | null) {\n  if (seconds === null || !Number.isFinite(seconds)) return "Calculating…";\n  if (seconds <= 0) return "Almost done";\n  const minutes = Math.floor(seconds / 60);\n  const remaining = Math.ceil(seconds % 60);\n  return minutes ? minutes + "m " + remaining + "s left" : remaining + "s left";\n}\nfunction size(value: number | null) {
   if (value === null) return "—";
   if (!value) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -54,7 +54,7 @@ export default function App() {
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [paused, setPaused] = useState(false);
   const [preview, setPreview] = useState<Item | null>(null);
-  const [dragging, setDragging] = useState(false);
+  const [dragging, setDragging] = useState(false);\n  const [sortBy, setSortBy] = useState<"name" | "size" | "modified">("name");\n  const [lightTheme, setLightTheme] = useState(false);
   const pauseRef = useRef(false);
   const cancelRef = useRef(false);
   const query = useQuery({ queryKey: ["files", path], queryFn: () => loadFiles(path) });
@@ -76,7 +76,7 @@ export default function App() {
       if (cancelRef.current) break;
       const id = crypto.randomUUID();
       const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-      setTransfers(current => [...current, { id, name: relative, size: file.size, sent: 0, status: "Preparing", speed: 0 }]);
+      setTransfers(current => [...current, { id, name: relative, size: file.size, sent: 0, status: "Preparing", speed: 0, eta: null }]);
       let session: UploadSession | null = null;
       try {
         session = await api<UploadSession>("/api/upload/init", {
@@ -109,17 +109,17 @@ export default function App() {
           const now = performance.now();
           const elapsed = Math.max((now - lastTime) / 1000, 0.001);
           const speed = (offset - lastOffset) / elapsed;
-          updateTransfer(id, { sent: offset, speed, status: "Uploading" });
+          updateTransfer(id, { sent: offset, speed, eta: speed > 0 ? (file.size - offset) / speed : null, status: "Uploading" });
           lastTime = now;
           lastOffset = offset;
         }
         await api("/api/upload/complete", json("POST", { upload_id: session.upload_id }));
-        updateTransfer(id, { sent: file.size, status: "Complete", speed: 0 });
+        updateTransfer(id, { sent: file.size, status: "Complete", speed: 0, eta: 0 });
       } catch (error) {
         if (session) {
           try { await api("/api/upload/cancel", json("POST", { upload_id: session.upload_id })); } catch { /* session may already be gone */ }
         }
-        updateTransfer(id, { status: error instanceof Error ? error.message : "Upload failed", speed: 0 });
+        updateTransfer(id, { status: error instanceof Error ? error.message : "Upload failed", speed: 0, eta: null });
         if (cancelRef.current) break;
       }
     }
@@ -177,7 +177,7 @@ export default function App() {
   }
 
   return (
-    <div className="shell" onDragOver={event => { event.preventDefault(); setDragging(true); }}
+    <div className={lightTheme ? "shell light" : "shell"} onDragOver={event => { event.preventDefault(); setDragging(true); }}
       onDragLeave={event => { if (event.currentTarget === event.target) setDragging(false); }}
       onDrop={event => { event.preventDefault(); setDragging(false); void uploadFiles(event.dataTransfer.files); }}>
       <aside className="sidebar">
@@ -188,7 +188,7 @@ export default function App() {
       <main>
         <header><div className="mobile-brand"><b>F</b> FileBridge</div>
           <span className="network"><i /><Wifi size={14} /> Local network connected</span>
-          <span className="auth"><ShieldCheck size={15} /> Authenticated</span>
+          <div className="header-actions"><span className="auth"><ShieldCheck size={15} /> Authenticated</span><button className="icon theme-toggle" onClick={() => setLightTheme(value => !value)} aria-label="Toggle color theme">{lightTheme ? <Moon /> : <Sun />}</button></div>
         </header>
         <section className="content">
           <div className="heading"><div><small>YOUR PRIVATE CLOUD</small><h1>My files</h1><p>Everything you need, in one private space.</p></div>
@@ -206,7 +206,7 @@ export default function App() {
             </div><div className="tools">
               <label className="search"><Search size={16} /><input placeholder="Search files..." value={search} onChange={event => setSearch(event.target.value)} /></label>
               <button className="icon" aria-label="List view" onClick={() => setGrid(false)}><List /></button>
-              <button className="icon" aria-label="Grid view" onClick={() => setGrid(true)}><LayoutGrid /></button>
+              <button className="icon" aria-label="Grid view" onClick={() => setGrid(true)}><LayoutGrid /></button>\n              <select className="sort-select" aria-label="Sort files" value={sortBy} onChange={event => setSortBy(event.target.value as typeof sortBy)}><option value="name">Name</option><option value="size">Size</option><option value="modified">Modified</option></select>
               <button className="icon" aria-label="Refresh" onClick={() => void query.refetch()}><RefreshCw /></button>
             </div></div>
             <div className="subbar"><span>{items.length} items</span><div>
@@ -243,7 +243,7 @@ export default function App() {
             </div></div>
             {!transfers.length ? <p className="muted">No active or recent transfers.</p> : transfers.map(item =>
               <div className="transfer-row" key={item.id}>
-                <div className="transfer-info"><span>{item.name}</span><small>{size(item.sent)} / {size(item.size)} · {item.status} {item.speed > 0 ? "· " + size(item.speed) + "/s" : ""}</small></div>
+                <div className="transfer-info"><span>{item.name}</span><small>{size(item.sent)} / {size(item.size)} · {item.status} {item.speed > 0 ? "· " + size(item.speed) + "/s" : ""} {item.status === "Uploading" || item.status === "Paused" ? "· " + duration(item.eta) : ""}</small></div>
                 <progress value={item.size ? item.sent : 1} max={item.size || 1} />
               </div>)}
           </section>
