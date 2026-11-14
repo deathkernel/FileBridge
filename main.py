@@ -58,6 +58,9 @@ def _arguments() -> argparse.Namespace:
 
 def main() -> int:
     args = _arguments()
+    if bool(args.tls_cert) != bool(args.tls_key):
+        print("--tls-cert and --tls-key must be supplied together.", file=sys.stderr)
+        return 2
     folder_input = args.folder or input("Folder to share: ").strip().strip('"')
     if not folder_input:
         print("No folder selected. Exiting.", file=sys.stderr)
@@ -70,10 +73,6 @@ def main() -> int:
     if not 1 <= args.port <= 65535:
         print("Port must be between 1 and 65535.", file=sys.stderr)
         return 2
-    if bool(args.tls_cert) != bool(args.tls_key):
-        print("--tls-cert and --tls-key must be supplied together.", file=sys.stderr)
-        return 2
-
     password = secrets.token_urlsafe(18)
     try:
         server = create_server(folder, port=args.port, password=password)
