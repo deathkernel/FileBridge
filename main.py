@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import secrets
 import socket
+import ssl
 import sys
 import webbrowser
 from pathlib import Path
@@ -40,6 +41,14 @@ def _arguments() -> argparse.Namespace:
         help="HTTP port to listen on (default: 6789).",
     )
     parser.add_argument(
+        "--tls-cert",
+        help="Path to a TLS certificate (requires --tls-key).",
+    )
+    parser.add_argument(
+        "--tls-key",
+        help="Path to the TLS private key (requires --tls-cert).",
+    )
+    parser.add_argument(
         "--no-browser",
         action="store_true",
         help="Do not open the browser automatically.",
@@ -61,6 +70,9 @@ def main() -> int:
     if not 1 <= args.port <= 65535:
         print("Port must be between 1 and 65535.", file=sys.stderr)
         return 2
+    if bool(args.tls_cert) != bool(args.tls_key):
+        print("--tls-cert and --tls-key must be supplied together.", file=sys.stderr)
+        return 2
 
     password = secrets.token_urlsafe(18)
     try:
@@ -69,8 +81,21 @@ def main() -> int:
         print(f"Could not start FileBridge: {exc}", file=sys.stderr)
         return 1
 
-    local_url = f"http://127.0.0.1:{args.port}/"
-    lan_url = f"http://{_lan_address()}:{args.port}/"
+    scheme = "http"
+    if args.tls_cert and args.tls_key:
+        try:
+            tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            tls_context.minimum_version = ssl.TLSVersion.TLSv1_2
+            tls_context.load_cert_chain(args.tls_cert, args.tls_key)
+            server.socket = tls_context.wrap_socket(server.socket, server_side=True)
+            scheme = "https"
+        except (OSError, ssl.SSLError) as exc:
+            server.server_close()
+            print(f"Could not configure HTTPS: {exc}", file=sys.stderr)
+            return 1
+
+    local_url = f"{scheme}://127.0.0.1:{args.port}/"
+    lan_url = f"{scheme}://{_lan_address()}:{args.port}/"
     print("\nFileBridge is running.")
     print(f"Shared folder: {folder.resolve()}")
     print(f"Local URL:     {local_url}")
