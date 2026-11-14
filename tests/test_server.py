@@ -123,6 +123,19 @@ class FileBridgeIntegrationTests(unittest.TestCase):
         with self.request("/api/file?path=notes.txt") as response:
             self.assertTrue(response.headers["Content-Disposition"].startswith("inline;"))
 
+    def test_inline_file_response_sandboxes_active_content(self) -> None:
+        with self.request("/api/file?path=notes.txt") as response:
+            policy = response.headers.get("Content-Security-Policy", "")
+            self.assertIn("sandbox", policy)
+            self.assertIn("default-src 'none'", policy)
+
+    def test_chunked_upload_supports_empty_file(self) -> None:
+        with self.json_post("/api/upload/init", {"path": "", "relative": "empty.txt", "size": 0}) as response:
+            upload_id = json.loads(response.read())["upload_id"]
+        with self.json_post("/api/upload/complete", {"upload_id": upload_id}) as response:
+            self.assertTrue(json.loads(response.read())["ok"])
+        self.assertEqual((self.root / "empty.txt").read_bytes(), b"")
+
     def test_file_download_is_attachment(self) -> None:
         with self.request("/api/file?path=notes.txt&download=1") as response:
             self.assertTrue(response.headers["Content-Disposition"].startswith("attachment;"))
