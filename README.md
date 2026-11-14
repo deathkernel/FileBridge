@@ -94,4 +94,4 @@ Folder upload depends on browser directory-selection support, commonly available
 py -3 -m unittest discover -v
 ```
 
-The GitHub Actions workflow installs Python and frontend dependencies, builds the React web application, compiles Python sources, and runs the test suite. It does not package a Windows desktop executable.
+The GitHub Actions workflow performs the frontend production build and Python unit/integration tests on both Linux and Windows. It does not package a Windows desktop executable.
