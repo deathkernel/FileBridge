@@ -1,50 +1,81 @@
 # FileBridge
 
-FileBridge is a Windows desktop utility for authenticated file access and transfer over a trusted local Wi-Fi network. Select one folder on the PC, start the server, and open the displayed LAN address from a phone or another device.
+FileBridge is a browser-based file manager for transferring files between a Windows PC and devices on the same trusted local Wi-Fi network. The PC runs a small Python HTTP server; users access the application from a desktop or mobile browser. There is no desktop GUI product or EXE launcher.
 
-## Phase 1 — Browse and preview
+## Features
 
-- Browse nested folders and search names.
-- Preview images, PDFs, text, and browser-supported media.
-- HTTP byte-range support for media seeking.
-- File metadata and responsive mobile UI.
-
-## Phase 2 — Secure transfer and file management
-
-- A fresh random session password is generated every time the desktop server starts.
-- HTTP Basic authentication protects browser routes and all file operations.
-- Upload individual or multiple files; upload a folder while preserving its relative folder structure.
+- Browse folders and search file names.
+- Preview images, PDFs, text, and browser-supported audio/video.
 - Download individual files and ZIP archives of folders.
-- Create folders, rename and move items, and permanently delete files or folders.
-- Uploads use temporary files and atomic placement; existing files are never silently overwritten.
-- Upload progress is shown in the browser; uploads are limited to 5 GB per file.
-- Standard-library-only Python implementation.
+- Upload multiple files and folders while preserving relative paths.
+- Chunked uploads with progress, throughput, pause/resume at chunk boundaries, and cancellation while the page and server remain active.
+- Create folders, rename, move, and permanently delete items.
+- HTTP byte-range support for media seeking.
+- Authentication with a fresh random session password on each server start.
+- Responsive React web interface.
 
-## Requirements and run
+## Requirements
 
-- Windows 10/11 and Python 3.10+ with Tkinter.
-- Phone and PC on the same trusted private Wi-Fi network.
+- Windows 10/11.
+- Python 3.10 or newer.
+- Node.js 22 or newer only when building the frontend.
+- PC and client devices connected to the same trusted private Wi-Fi network.
+
+## Build the web interface
+
+From the repository root:
 
 ```powershell
-git pull origin main
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+The production frontend is generated into `filebridge/web`.
+
+## Start FileBridge
+
+From CMD or PowerShell, in the repository root:
+
+```powershell
 py -3 main.py
 ```
 
-Choose a folder, start the server, then open the shown address on your phone. Enter username `filebridge` and the one-session password displayed in the desktop app.
+When prompted, enter the folder you want to share. You can also pass it directly:
 
-## Safety
+```powershell
+py -3 main.py "C:\Users\YourName\Documents"
+```
 
-- Use only a trusted private Wi-Fi network. Share the session password only with your own devices.
-- HTTP Basic authentication is not encryption. Credentials and files travel over plain HTTP and can be observed on an untrusted network. Do not use on public Wi-Fi or the internet.
-- Never configure router port forwarding. Allow Python through Windows Firewall on Private networks only.
-- Uploads, moves, renames, and deletes modify the selected folder. Deletions are permanent.
-- Uploads refuse to overwrite an existing file. A folder upload can partially complete if interrupted; check the destination before retrying.
-- ZIP archives are assembled in a temporary file on the PC and removed after sending.
-- This is a personal LAN utility, not a hardened multi-user or internet-facing server. Filesystem protections reduce path escape risks but do not eliminate every filesystem race condition.
+Optional arguments:
+
+```powershell
+py -3 main.py --port 6789 --no-browser "C:\Users\YourName\Documents"
+```
+
+The terminal displays:
+- Local browser URL.
+- LAN URL for your phone or another device.
+- Username: `filebridge`.
+- A randomly generated password for this server session.
+
+The local browser opens automatically unless `--no-browser` is supplied. Enter the displayed username and password when the browser requests authentication. Keep the terminal open while using FileBridge. Press `Ctrl+C` to stop the server.
+
+## Security and safe use
+
+- Use FileBridge only on a trusted private network. Do not expose the port to the public internet.
+- HTTP Basic authentication is not encryption. Credentials and file contents travel over plain HTTP. Do not use public Wi-Fi or untrusted networks.
+- Do not configure router port forwarding.
+- Allow Python through Windows Firewall on Private networks only, if Windows asks.
+- Uploads, moves, renames, and deletes modify the selected shared folder. Deletions are permanent.
+- Uploads refuse to overwrite an existing file.
+- The server limits uploads to 5 GiB per file and uses chunked uploads.
+- This is a personal LAN utility, not a hardened multi-user or internet-facing file server.
 
 ## Browser notes
 
-Folder upload uses the browser's directory-selection feature (commonly supported in Chromium browsers). Playback depends on browser codecs. Large transfers may be interrupted if a phone sleeps or leaves Wi-Fi range.
+Folder upload depends on browser directory-selection support, commonly available in Chromium-based browsers. Media playback depends on browser codecs. Transfers can be interrupted if a phone sleeps or leaves Wi-Fi range. Upload resume is limited to the active server process and browser page; it does not survive closing the tab or restarting the server.
 
 ## Tests
 
@@ -52,22 +83,4 @@ Folder upload uses the browser's directory-selection feature (commonly supported
 py -3 -m unittest discover -v
 ```
 
-## Phase 3 — Transfer experience
-
-- Chunked upload API uses 4 MiB blocks.
-- Pause and resume work at confirmed chunk boundaries while the page and server stay active.
-- Browser queue shows per-file progress and approximate throughput.
-- Drag-and-drop adds files to the queue.
-- Directory uploads retain nested relative paths.
-- The desktop app displays a QR code for the local URL. The session password is never embedded in the QR code.
-
-## Windows executable
-
-GitHub Actions runs a Windows packaging job on pushes to main. Open Actions, choose the latest successful workflow run, and download the FileBridge-Windows-x64 artifact. It is an unsigned portable EXE, not an installer.
-
-
-## Current release status
-
-The Windows packaging workflow has produced a portable FileBridge-Windows-x64 executable artifact. Download it from the latest successful workflow run under the Actions tab. The executable is not code-signed and is not an installer.
-
-Chunked upload resume is supported while the server process and browser page remain open. Resume does not survive closing the browser tab or restarting the server. HTTPS and end-to-end encrypted transport are not implemented; use a trusted private Wi-Fi network only.
+The GitHub Actions workflow installs Python and frontend dependencies, builds the React web application, compiles Python sources, and runs the test suite. It does not package a Windows desktop executable.
