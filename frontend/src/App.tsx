@@ -66,6 +66,8 @@ export default function App() {
   const [lightTheme, setLightTheme] = useState(false);
   const pauseRef = useRef(false);
   const cancelRef = useRef(false);
+  const uploadQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingBatchesRef = useRef(0);
   const query = useQuery({ queryKey: ["files", path], queryFn: () => loadFiles(path) });
   const items = useMemo(
     () => (query.data?.items ?? [])
@@ -87,63 +89,78 @@ export default function App() {
   async function uploadFiles(fileList: FileList | File[]) {
     const files = Array.from(fileList);
     if (!files.length) return;
-    cancelRef.current = false;
-    for (const file of files) {
-      if (cancelRef.current) break;
-      const id = crypto.randomUUID();
-      const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-      setTransfers(current => [...current, { id, name: relative, size: file.size, sent: 0, status: "Preparing", speed: 0, eta: null }]);
-      let session: UploadSession | null = null;
-      try {
-        session = await api<UploadSession>("/api/upload/init", {
-          ...json("POST", { path, relative, size: file.size }),
-        });
-        let offset = 0;
-        let lastTime = performance.now();
-        let lastOffset = 0;
-        updateTransfer(id, { status: "Uploading" });
-        while (offset < file.size) {
-          while (pauseRef.current && !cancelRef.current) {
-            updateTransfer(id, { status: "Paused" });
-            await new Promise(resolve => setTimeout(resolve, 180));
-          }
-          if (cancelRef.current) throw new Error("Cancelled");
-          const end = Math.min(offset + session.chunk_size, file.size);
-          const chunk = file.slice(offset, end);
-          const response = await fetch("/api/upload/chunk", {
-            method: "POST",
-            headers: { "X-Upload-Id": session.upload_id, "X-Upload-Offset": String(offset) },
-            body: chunk,
-          });
-          if (!response.ok) {
-            let message = response.statusText;
-            try { message = (await response.json()).error || message; } catch { /* ignore */ }
-            throw new Error(message);
-          }
-          const result = await response.json();
-          offset = result.offset;
-          const now = performance.now();
-          const elapsed = Math.max((now - lastTime) / 1000, 0.001);
-          const speed = (offset - lastOffset) / elapsed;
-          updateTransfer(id, { sent: offset, speed, eta: speed > 0 ? (file.size - offset) / speed : null, status: "Uploading" });
-          lastTime = now;
-          lastOffset = offset;
-        }
-        await api("/api/upload/complete", json("POST", { upload_id: session.upload_id }));
-        updateTransfer(id, { sent: file.size, status: "Complete", speed: 0, eta: 0 });
-      } catch (error) {
-        if (session) {
-          try { await api("/api/upload/cancel", json("POST", { upload_id: session.upload_id })); } catch { /* session may already be gone */ }
-        }
-        updateTransfer(id, { status: error instanceof Error ? error.message : "Upload failed", speed: 0, eta: null });
-        if (cancelRef.current) break;
-      }
-    }
-    setPaused(false);
-    pauseRef.current = false;
-    await query.refetch();
-  }
+    if (pendingBatchesRef.current === 0) cancelRef.current = false;
+    pendingBatchesRef.current += 1;
 
+    const runBatch = async () => {
+      try {
+        if (cancelRef.current) return;
+        for (const file of files) {
+          if (cancelRef.current) break;
+          const id = crypto.randomUUID();
+          const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+          setTransfers(current => [...current, { id, name: relative, size: file.size, sent: 0, status: "Queued", speed: 0, eta: null }]);
+          let session: UploadSession | null = null;
+          try {
+            session = await api<UploadSession>("/api/upload/init", {
+              ...json("POST", { path, relative, size: file.size }),
+            });
+            let offset = 0;
+            let lastTime = performance.now();
+            let lastOffset = 0;
+            updateTransfer(id, { status: "Uploading" });
+            while (offset < file.size) {
+              while (pauseRef.current && !cancelRef.current) {
+                updateTransfer(id, { status: "Paused" });
+                await new Promise(resolve => setTimeout(resolve, 180));
+              }
+              if (cancelRef.current) throw new Error("Cancelled");
+              const end = Math.min(offset + session.chunk_size, file.size);
+              const chunk = file.slice(offset, end);
+              const response = await fetch("/api/upload/chunk", {
+                method: "POST",
+                headers: { "X-Upload-Id": session.upload_id, "X-Upload-Offset": String(offset) },
+                body: chunk,
+              });
+              if (!response.ok) {
+                let message = response.statusText;
+                try { message = (await response.json()).error || message; } catch { /* ignore */ }
+                throw new Error(message);
+              }
+              const result = await response.json();
+              offset = result.offset;
+              const now = performance.now();
+              const elapsed = Math.max((now - lastTime) / 1000, 0.001);
+              const speed = (offset - lastOffset) / elapsed;
+              updateTransfer(id, { sent: offset, speed, eta: speed > 0 ? (file.size - offset) / speed : null, status: "Uploading" });
+              lastTime = now;
+              lastOffset = offset;
+            }
+            await api("/api/upload/complete", json("POST", { upload_id: session.upload_id }));
+            updateTransfer(id, { sent: file.size, status: "Complete", speed: 0, eta: 0 });
+          } catch (error) {
+            if (session) {
+              try { await api("/api/upload/cancel", json("POST", { upload_id: session.upload_id })); } catch { /* session may already be gone */ }
+            }
+            updateTransfer(id, { status: error instanceof Error ? error.message : "Upload failed", speed: 0, eta: null });
+            if (cancelRef.current) break;
+          }
+        }
+      } finally {
+        pendingBatchesRef.current -= 1;
+        if (pendingBatchesRef.current === 0) {
+          setPaused(false);
+          pauseRef.current = false;
+          cancelRef.current = false;
+          void query.refetch();
+        }
+      }
+    };
+
+    const queuedBatch = uploadQueueRef.current.then(runBatch, runBatch);
+    uploadQueueRef.current = queuedBatch;
+    await queuedBatch;
+  }
   function togglePause() {
     const next = !pauseRef.current;
     pauseRef.current = next;
