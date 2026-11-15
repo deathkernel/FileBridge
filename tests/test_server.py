@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json
 import tempfile
 import threading
@@ -24,7 +23,6 @@ class FileBridgeIntegrationTests(unittest.TestCase):
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
-        self.auth = "Basic " + base64.b64encode(b"filebridge:test-secret").decode()
 
     def tearDown(self) -> None:
         self.server.shutdown()
@@ -33,8 +31,7 @@ class FileBridgeIntegrationTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def request(self, path: str, method: str = "GET", body: bytes | None = None, headers: dict | None = None):
-        request_headers = {"Authorization": self.auth}
-        request_headers.update(headers or {})
+        request_headers = dict(headers or {})
         return urlopen(Request(self.base + path, data=body, headers=request_headers, method=method))
 
     def json_post(self, route: str, payload: dict):
@@ -45,7 +42,7 @@ class FileBridgeIntegrationTests(unittest.TestCase):
         with self.request("/api/health") as response:
             payload = json.loads(response.read())
         self.assertEqual(payload["status"], "ok")
-        self.assertEqual(payload["mode"], "authenticated")
+        self.assertEqual(payload["mode"], "open")
 
     @unittest.skipUnless(
         (Path(__file__).resolve().parents[1] / "filebridge" / "web" / "index.html").exists(),
@@ -61,10 +58,9 @@ class FileBridgeIntegrationTests(unittest.TestCase):
                 self.assertIn(content_type, response.headers.get("Content-Type", ""))
                 self.assertGreater(int(response.headers["Content-Length"]), 0)
 
-    def test_requires_authentication(self) -> None:
-        with self.assertRaises(HTTPError) as raised:
-            urlopen(self.base + "/api/files")
-        self.assertEqual(raised.exception.code, 401)
+    def test_allows_access_without_login(self) -> None:
+        with urlopen(self.base + "/api/files") as response:
+            self.assertEqual(response.status, 200)
 
     def test_lists_files_and_hides_hidden_entries(self) -> None:
         with self.request("/api/files") as response:
@@ -165,11 +161,11 @@ class FileBridgeIntegrationTests(unittest.TestCase):
             self.assertEqual(response.headers["Content-Type"], "application/zip")
             self.assertTrue(response.read().startswith(b"PK"))
 
-    def test_write_operations_reject_unauthorized_request(self) -> None:
+    def test_write_operations_allow_access_without_login(self) -> None:
         request = Request(self.base + "/api/delete", data=b'{"path":"notes.txt"}', method="POST")
-        with self.assertRaises(HTTPError) as raised:
-            urlopen(request)
-        self.assertEqual(raised.exception.code, 401)
+        with urlopen(request) as response:
+            self.assertEqual(response.status, 200)
+        self.assertFalse((self.root / "notes.txt").exists())
 
 
 class PathAndRangeTests(unittest.TestCase):
