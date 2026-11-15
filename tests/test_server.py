@@ -19,7 +19,7 @@ class FileBridgeIntegrationTests(unittest.TestCase):
         (self.root / "notes.txt").write_text("hello", encoding="utf-8")
         (self.root / ".hidden").write_text("secret", encoding="utf-8")
         (self.root / "destination").mkdir()
-        self.server = create_server(self.root, 0, "test-secret")
+        self.server = create_server(self.root, 0)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
