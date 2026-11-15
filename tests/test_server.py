@@ -49,14 +49,23 @@ class FileBridgeIntegrationTests(unittest.TestCase):
         "Production web assets have not been built.",
     )
     def test_serves_production_web_entrypoint_and_assets(self) -> None:
-        for route, content_type in (
-            ("/", "text/html"),
-            ("/assets/styles.css", "text/css"),
-            ("/assets/app.js", "text/javascript"),
-        ):
-            with self.request(route) as response:
-                self.assertIn(content_type, response.headers.get("Content-Type", ""))
-                self.assertGreater(int(response.headers["Content-Length"]), 0)
+        with self.request("/") as response:
+            html = response.read().decode("utf-8")
+            self.assertIn("text/html", response.headers.get("Content-Type", ""))
+        self.assertIn('id="root"', html)
+        self.assertIn('type="module"', html)
+        self.assertIn("/assets/app.js", html)
+        self.assertIn("/assets/styles.css", html)
+
+        with self.request("/assets/styles.css") as response:
+            self.assertIn("text/css", response.headers.get("Content-Type", ""))
+            self.assertGreater(int(response.headers["Content-Length"]), 0)
+
+        with self.request("/assets/app.js") as response:
+            app_bundle = response.read().decode("utf-8")
+            self.assertIn("text/javascript", response.headers.get("Content-Type", ""))
+            self.assertGreater(int(response.headers["Content-Length"]), 0)
+        self.assertIn("YOUR PRIVATE CLOUD", app_bundle)
 
     def test_allows_access_without_login(self) -> None:
         with urlopen(self.base + "/api/files") as response:

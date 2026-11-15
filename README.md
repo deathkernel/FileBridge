@@ -11,7 +11,7 @@ FileBridge is a browser-based file manager for transferring files between a Wind
 - Chunked uploads with progress, throughput, pause/resume at chunk boundaries, and cancellation while the page and server remain active.
 - Create folders, rename, move, and permanently delete items.
 - HTTP byte-range support for media seeking.
-- Authentication with a fresh random session password on each server start.
+- No-login access on the trusted local network (any connected device can manage shared files).
 - Responsive React web interface.
 
 ## Requirements
@@ -75,7 +75,7 @@ The local browser opens automatically unless `--no-browser` is supplied. Enter t
 ## Security and safe use
 
 - Use FileBridge only on a trusted private network. Do not expose the port to the public internet.
-- Without the optional TLS certificate/key arguments, HTTP Basic authentication is not encryption. Credentials and file contents travel over plain HTTP. Do not use public Wi-Fi or untrusted networks.
+- Login is disabled by default. Anyone on the same reachable LAN can list, download, upload, rename, move, and delete files in the shared folder. Use only a trusted private Wi-Fi network; do not use public Wi-Fi or expose the port to the internet.
 - HTTPS requires a valid certificate trusted by every connecting device. TLS protects traffic in transit but does not turn this personal LAN utility into an internet-facing service.
 - Do not configure router port forwarding.
 - Allow Python through Windows Firewall on Private networks only, if Windows asks.
