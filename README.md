@@ -1,6 +1,6 @@
 # FileBridge
 
-FileBridge is a browser-based file manager for transferring files between a Windows PC and devices on the same trusted local Wi-Fi network. The PC runs a small Python HTTP server; users access the application from a desktop or mobile browser. There is no desktop GUI product or EXE launcher.
+FileBridge is a browser-based file manager for transferring files between a Windows PC and devices on the same trusted local Wi-Fi network. The PC runs a small Python HTTP server; users access the application from a desktop or mobile browser. FileBridge is not a desktop GUI application and does not provide a Windows EXE launcher.
 
 ## Features
 
@@ -11,8 +11,8 @@ FileBridge is a browser-based file manager for transferring files between a Wind
 - Chunked uploads with progress, throughput, pause/resume at chunk boundaries, and cancellation while the page and server remain active.
 - Create folders, rename, move, and permanently delete items.
 - HTTP byte-range support for media seeking.
-- No-login access on the trusted local network (any connected device can manage shared files).
-- Responsive React web interface.
+- No-login access by default on the trusted local network.
+- Responsive React web interface with dark and light themes.
 
 ## Requirements
 
@@ -21,9 +21,11 @@ FileBridge is a browser-based file manager for transferring files between a Wind
 - Node.js 22 or newer only when building the frontend.
 - PC and client devices connected to the same trusted private Wi-Fi network.
 
+The Python backend uses only the Python standard library. No Python package installation is required to run the browser-based server.
+
 ## Build the web interface
 
-From the repository root:
+From the repository root, when changing the frontend:
 
 ```powershell
 cd frontend
@@ -32,7 +34,7 @@ npm run build
 cd ..
 ```
 
-The production frontend is generated into `filebridge/web`.
+The production frontend is generated into `filebridge/web`. The GitHub Actions workflow also builds and publishes these production assets to the main branch after the Linux and Windows checks pass.
 
 ## Start FileBridge
 
@@ -54,7 +56,9 @@ Optional arguments:
 py -3 main.py --port 6789 --no-browser "C:\Users\YourName\Documents"
 ```
 
-### HTTPS (optional)
+The server opens the local browser automatically unless `--no-browser` is supplied. The terminal displays the local URL and the LAN URL to open on your phone or another device connected to the same Wi-Fi network. **The standard launcher does not ask for a username or password.** Keep the terminal open while using FileBridge. Press `Ctrl+C` to stop the server.
+
+## HTTPS (optional)
 
 For encrypted browser-to-server traffic, provide a TLS certificate and its private key:
 
@@ -64,18 +68,10 @@ py -3 main.py --tls-cert "C:\certs\filebridge.crt" --tls-key "C:\certs\filebridg
 
 Use a certificate whose Subject Alternative Names cover the LAN hostname or IP address used by your devices, and install/trust its issuing CA on those devices. A self-signed or mismatched certificate will trigger browser warnings. Without these options, FileBridge uses HTTP.
 
-The terminal displays:
-- Local browser URL.
-- LAN URL for your phone or another device.
-- Username: `filebridge`.
-- A randomly generated password for this server session.
-
-The local browser opens automatically unless `--no-browser` is supplied. Enter the displayed username and password when the browser requests authentication. Keep the terminal open while using FileBridge. Press `Ctrl+C` to stop the server.
-
 ## Security and safe use
 
 - Use FileBridge only on a trusted private network. Do not expose the port to the public internet.
-- Login is disabled by default. Anyone on the same reachable LAN can list, download, upload, rename, move, and delete files in the shared folder. Use only a trusted private Wi-Fi network; do not use public Wi-Fi or expose the port to the internet.
+- Login is disabled in the standard launcher. Anyone on the same reachable LAN can list, download, upload, rename, move, and delete files in the shared folder. Use only a trusted private Wi-Fi network; do not use public Wi-Fi or expose the port to the internet.
 - HTTPS requires a valid certificate trusted by every connecting device. TLS protects traffic in transit but does not turn this personal LAN utility into an internet-facing service.
 - Do not configure router port forwarding.
 - Allow Python through Windows Firewall on Private networks only, if Windows asks.
@@ -89,6 +85,8 @@ The local browser opens automatically unless `--no-browser` is supplied. Enter t
 Folder upload depends on browser directory-selection support, commonly available in Chromium-based browsers. Media playback depends on browser codecs. Transfers can be interrupted if a phone sleeps or leaves Wi-Fi range. Upload resume is limited to the active server process and browser page; it does not survive closing the tab or restarting the server.
 
 ## Tests
+
+From the repository root:
 
 ```powershell
 py -3 -m unittest discover -v
