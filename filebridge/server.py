@@ -1,4 +1,4 @@
-"""Authenticated local-network file server with safe upload and file management."""
+"""Local-network file server with safe upload and file management."""
 
 from __future__ import annotations
 
@@ -89,11 +89,11 @@ def _parse_range(value: str, file_size: int) -> tuple[int, int] | None:
 
 
 def create_server(shared_folder: str | Path, port: int = 6789, password: str | None = None) -> ThreadingHTTPServer:
-    """Create an authenticated HTTP server. Supply a strong per-session password."""
+    """Create a local-network HTTP server; authentication is optional."""
     root = Path(shared_folder).expanduser().resolve(strict=True)
     if not root.is_dir():
         raise NotADirectoryError(f"Not a directory: {root}")
-    session_password = password or secrets.token_urlsafe(12)
+    session_password = password
 
     class FileBridgeHandler(BaseHTTPRequestHandler):
         server_version = "FileBridge/2.0"
@@ -120,6 +120,8 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
                 self.wfile.write(body)
 
         def _authorized(self) -> bool:
+            if session_password is None:
+                return True
             header = self.headers.get("Authorization", "")
             try:
                 scheme, encoded = header.split(" ", 1)
@@ -157,7 +159,7 @@ def create_server(shared_folder: str | Path, port: int = 6789, password: str | N
             elif route == "/assets/app.js":
                 self._serve_asset("assets/app.js", "text/javascript; charset=utf-8")
             elif route == "/api/health":
-                self._send_json({"status": "ok", "name": "FileBridge", "mode": "authenticated"})
+                self._send_json({"status": "ok", "name": "FileBridge", "mode": "open"})
             elif route == "/api/files":
                 self._list_directory(self._query_path())
             elif route == "/api/file":
