@@ -53,12 +53,12 @@ class LauncherTests(unittest.TestCase):
         create_server.assert_called_once()
         self.assertEqual(create_server.call_args.args[0], Path(folder))
         self.assertEqual(create_server.call_args.kwargs["port"], 6789)
-        self.assertTrue(create_server.call_args.kwargs["password"])
         server.serve_forever.assert_called_once()
         server.server_close.assert_called_once()
         open_browser.assert_called_once_with("http://127.0.0.1:6789/")
         self.assertIn("http://192.168.1.20:6789/", output.getvalue())
-        self.assertIn("Username:      filebridge", output.getvalue())
+        self.assertIn("No login is required", output.getvalue())
+        self.assertNotIn("Password:", output.getvalue())
 
 
 if __name__ == "__main__":
