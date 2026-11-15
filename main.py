@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import secrets
 import socket
 import ssl
 import sys
@@ -73,9 +72,8 @@ def main() -> int:
     if not 1 <= args.port <= 65535:
         print("Port must be between 1 and 65535.", file=sys.stderr)
         return 2
-    password = secrets.token_urlsafe(18)
     try:
-        server = create_server(folder, port=args.port, password=password)
+        server = create_server(folder, port=args.port)
     except OSError as exc:
         print(f"Could not start FileBridge: {exc}", file=sys.stderr)
         return 1
@@ -99,9 +97,7 @@ def main() -> int:
     print(f"Shared folder: {folder.resolve()}")
     print(f"Local URL:     {local_url}")
     print(f"LAN URL:       {lan_url}")
-    print("Username:      filebridge")
-    print(f"Password:      {password}")
-    print("\nOpen the LAN URL on a device connected to the same trusted Wi-Fi.")
+    print("\nNo login is required. Open the LAN URL on a device connected to the same trusted Wi-Fi.")
     print("Keep this terminal open. Press Ctrl+C to stop FileBridge.\n")
 
     if not args.no_browser:
