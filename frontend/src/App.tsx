@@ -221,7 +221,7 @@ export default function App() {
       <main>
         <header><div className="mobile-brand"><b>F</b> FileBridge</div>
           <span className="network"><i /><Wifi size={14} /> Local network connected</span>
-          <div className="header-actions"><span className="auth"><ShieldCheck size={15} /> Authenticated</span><button className="icon theme-toggle" onClick={() => setLightTheme(value => !value)} aria-label="Toggle color theme">{lightTheme ? <Moon /> : <Sun />}</button></div>
+          <div className="header-actions"><span className="auth"><ShieldCheck size={15} /> No sign-in required</span><button className="icon theme-toggle" onClick={() => setLightTheme(value => !value)} aria-label="Toggle color theme">{lightTheme ? <Moon /> : <Sun />}</button></div>
         </header>
         <section className="content">
           <div className="heading"><div><small>YOUR PRIVATE CLOUD</small><h1>My files</h1><p>Everything you need, in one private space.</p></div>
