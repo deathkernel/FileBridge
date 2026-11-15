@@ -9,7 +9,7 @@ concurrency:
 
 on:
   push:
-    branches: [main, "feat/**"]
+    branches: [main, "feat/**", "fix/**"]
     tags: ["v*"]
   pull_request:
     branches: [main]
@@ -61,3 +61,32 @@ jobs:
         run: python -m compileall -q .
       - name: Run unit and integration tests
         run: python -m unittest discover -v
+
+  publish-production-ui:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, windows-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install
+      - name: Build React web app
+        working-directory: frontend
+        run: npm run build
+      - name: Commit production assets served by Python
+        run: |
+          if git diff --quiet -- filebridge/web; then
+            echo "Production UI assets are already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add filebridge/web
+          git commit -m "Build React production UI assets"
+          git push
