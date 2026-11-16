@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
+import StorageScene from "./components/StorageScene";
 import {
   ArrowDownToLine, CloudUpload, File as FileIcon, FileImage, FileText, Film,
   Folder, FolderPlus, HardDrive, LayoutGrid, List, RefreshCw, Search,
@@ -224,7 +225,8 @@ export default function App() {
           <div className="header-actions"><span className="auth"><ShieldCheck size={15} /> No sign-in required</span><button className="icon theme-toggle" onClick={() => setLightTheme(value => !value)} aria-label="Toggle color theme">{lightTheme ? <Moon /> : <Sun />}</button></div>
         </header>
         <section className="content">
-          <div className="heading"><div><small>YOUR PRIVATE CLOUD</small><h1>My files</h1><p>Everything you need, in one private space.</p></div>
+          <div className="heading"><div className="heading-copy"><small>YOUR PRIVATE CLOUD</small><h1>My files</h1><p>Everything you need, in one private space.</p></div>
+            <div className="heading-visual"><StorageScene /></div>
             <label className="primary"><CloudUpload size={17} /> Upload files<input type="file" multiple hidden onChange={event => { if (event.target.files) void uploadFiles(event.target.files); event.target.value = ""; }} /></label>
           </div>
           <div className="stats">
