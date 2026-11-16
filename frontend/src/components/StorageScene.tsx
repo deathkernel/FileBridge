@@ -9,7 +9,7 @@ function OrbitalCore() {
   useEffect(() => {
     if (!group.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const tween = gsap.to(group.current.rotation, { y: Math.PI * 2, duration: 24, repeat: -1, ease: "none" });
-    return () => tween.kill();
+    return () => { tween.kill(); };
   }, []);
   return <group ref={group}>
     <Float speed={1.2} rotationIntensity={0.18} floatIntensity={0.5}>
