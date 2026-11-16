@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import StorageScene from "./components/StorageScene";
@@ -14,6 +14,7 @@ type Item = {
 };
 type Transfer = { id: string; name: string; size: number; sent: number; status: string; speed: number; eta: number | null };
 type UploadSession = { upload_id: string; chunk_size: number };
+type ActionDialog = { mode: "create" | "rename" | "move" | "delete"; item?: Item; value: string };
 
 async function api<T = any>(url: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(url, init);
@@ -65,6 +66,8 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [sortBy, setSortBy] = useState<"name" | "size" | "modified">("name");
   const [lightTheme, setLightTheme] = useState(false);
+  const [dialog, setDialog] = useState<ActionDialog | null>(null);
+  const [toast, setToast] = useState<{ message: string; kind: "success" | "error" } | null>(null);
   const pauseRef = useRef(false);
   const cancelRef = useRef(false);
   const uploadQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -82,6 +85,23 @@ export default function App() {
     [query.data, search, sortBy],
   );
   const crumbs = path ? path.split("/").filter(Boolean) : [];
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 3600);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setPreview(null);
+        setDialog(null);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   function updateTransfer(id: string, patch: Partial<Transfer>) {
     setTransfers(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
@@ -172,28 +192,37 @@ export default function App() {
     pauseRef.current = false;
     setPaused(false);
   }
-  async function createFolder() {
-    const name = prompt("Folder name");
-    if (!name) return;
-    try { await api("/api/folder", json("POST", { path, name })); await query.refetch(); }
-    catch (error) { alert(error instanceof Error ? error.message : "Could not create folder"); }
+  function openCreateFolder() {
+    setDialog({ mode: "create", value: "" });
   }
-  async function renameItem(item: Item) {
-    const name = prompt("New name", item.name);
-    if (!name || name === item.name) return;
-    try { await api("/api/rename", json("POST", { path: item.path, name })); await query.refetch(); }
-    catch (error) { alert(error instanceof Error ? error.message : "Could not rename item"); }
+  function openRename(item: Item) {
+    setDialog({ mode: "rename", item, value: item.name });
   }
-  async function moveItem(item: Item) {
-    const destination = prompt("Destination folder path (relative to shared folder)", path);
-    if (destination === null) return;
-    try { await api("/api/move", json("POST", { path: item.path, destination })); await query.refetch(); }
-    catch (error) { alert(error instanceof Error ? error.message : "Could not move item"); }
+  function openMove(item: Item) {
+    setDialog({ mode: "move", item, value: path });
   }
-  async function deleteItem(item: Item) {
-    if (!confirm(`Permanently delete "${item.name}"?`)) return;
-    try { await api("/api/delete", json("POST", { path: item.path })); await query.refetch(); }
-    catch (error) { alert(error instanceof Error ? error.message : "Could not delete item"); }
+  function openDelete(item: Item) {
+    setDialog({ mode: "delete", item, value: "" });
+  }
+  async function submitDialog() {
+    if (!dialog) return;
+    const value = dialog.value.trim();
+    if (dialog.mode !== "delete" && !value) {
+      setToast({ message: dialog.mode === "move" ? "Enter a destination folder." : "Name cannot be empty.", kind: "error" });
+      return;
+    }
+    try {
+      if (dialog.mode === "create") await api("/api/folder", json("POST", { path, name: value }));
+      if (dialog.mode === "rename" && dialog.item) await api("/api/rename", json("POST", { path: dialog.item.path, name: value }));
+      if (dialog.mode === "move" && dialog.item) await api("/api/move", json("POST", { path: dialog.item.path, destination: value }));
+      if (dialog.mode === "delete" && dialog.item) await api("/api/delete", json("POST", { path: dialog.item.path }));
+      const messages = { create: "Folder created.", rename: "Item renamed.", move: "Item moved.", delete: "Item deleted." };
+      setDialog(null);
+      setToast({ message: messages[dialog.mode], kind: "success" });
+      await query.refetch();
+    } catch (error) {
+      setToast({ message: error instanceof Error ? error.message : "The operation could not be completed.", kind: "error" });
+    }
   }
   function fileUrl(item: Item) {
     return "/api/file?" + new URLSearchParams({ path: item.path });
@@ -248,7 +277,7 @@ export default function App() {
             <div className="subbar"><span>{items.length} items</span><div>
               <label className="subtle">Upload folder<input type="file" hidden multiple {...({ webkitdirectory: "", directory: "" } as any)}
                 onChange={event => { if (event.target.files) void uploadFiles(event.target.files); event.target.value = ""; }} /></label>
-              <button className="subtle" onClick={() => void createFolder()}><FolderPlus size={14} /> New folder</button>
+              <button className="subtle" onClick={openCreateFolder}><FolderPlus size={14} /> New folder</button>
             </div></div>
             {query.isLoading ? <div className="empty">Loading files…</div> : query.isError ? <div className="empty error">{query.error.message}</div> :
               !items.length ? <div className="empty"><Folder size={30} /><strong>This folder is empty</strong><span>Upload a file or create a folder to get started.</span></div> :
@@ -262,9 +291,9 @@ export default function App() {
                   <div className="item-actions">
                     {item.kind === "directory" ? <a className="download" title="Download ZIP" href={"/api/archive?" + new URLSearchParams({ path: item.path })}><ArrowDownToLine size={16} /></a> :
                       <a className="download" title="Download" href={fileUrl(item) + "&download=1"}><ArrowDownToLine size={16} /></a>}
-                    <button className="download" title="Rename" onClick={() => void renameItem(item)}><Pencil size={15} /></button>
-                    <button className="download" title="Move" onClick={() => void moveItem(item)}><Move size={15} /></button>
-                    <button className="download danger-action" title="Delete" onClick={() => void deleteItem(item)}><Trash2 size={15} /></button>
+                    <button className="download" title="Rename" aria-label={`Rename ${item.name}`} onClick={() => openRename(item)}><Pencil size={15} /></button>
+                    <button className="download" title="Move" aria-label={`Move ${item.name}`} onClick={() => openMove(item)}><Move size={15} /></button>
+                    <button className="download danger-action" title="Delete" aria-label={`Delete ${item.name}`} onClick={() => openDelete(item)}><Trash2 size={15} /></button>
                   </div>
                 </motion.div>)}
               </div>}
@@ -287,6 +316,14 @@ export default function App() {
         </section>
       </main>
       {dragging && <div className="drop-overlay"><CloudUpload size={34} /><strong>Drop files to upload</strong></div>}
+      {toast && <div className={`toast ${toast.kind}`} role="status" aria-live="polite"><span>{toast.message}</span><button className="toast-close" onClick={() => setToast(null)} aria-label="Dismiss notification"><X size={15} /></button></div>}
+      {dialog && <div className="action-overlay" onClick={() => setDialog(null)}>
+        <form className="action-dialog" role="dialog" aria-modal="true" aria-labelledby="action-dialog-title" onClick={event => event.stopPropagation()} onSubmit={event => { event.preventDefault(); void submitDialog(); }}>
+          <div className="action-dialog-heading"><div><small>FILEBRIDGE ACTION</small><h2 id="action-dialog-title">{dialog.mode === "create" ? "Create folder" : dialog.mode === "rename" ? "Rename item" : dialog.mode === "move" ? "Move item" : "Delete item"}</h2></div><button type="button" className="icon" onClick={() => setDialog(null)} aria-label="Close dialog"><X /></button></div>
+          {dialog.mode === "delete" ? <p className="dialog-copy">Permanently delete <strong>{dialog.item?.name}</strong>? This action cannot be undone.</p> : <label className="dialog-field"><span>{dialog.mode === "move" ? "Destination folder (relative to shared folder)" : "Name"}</span><input autoFocus value={dialog.value} onChange={event => setDialog(current => current ? { ...current, value: event.target.value } : current)} placeholder={dialog.mode === "move" ? "e.g. Documents/Archive" : "Enter a name"} /></label>}
+          <div className="dialog-actions"><button type="button" className="subtle" onClick={() => setDialog(null)}>Cancel</button><button className={dialog.mode === "delete" ? "dialog-submit danger" : "dialog-submit"} type="submit">{dialog.mode === "create" ? "Create folder" : dialog.mode === "rename" ? "Save name" : dialog.mode === "move" ? "Move item" : "Delete permanently"}</button></div>
+        </form>
+      </div>}
       {preview && <div className="preview-overlay" onClick={() => setPreview(null)}>
         <section className="preview-modal" onClick={event => event.stopPropagation()}>
           <div className="preview-top"><div><strong>{preview.name}</strong><small>{size(preview.size)} · {preview.mime}</small></div>
