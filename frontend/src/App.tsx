@@ -56,6 +56,42 @@ function json(method: string, body: object): RequestInit {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
+function TextPreview({ item, url }: { item: Item; url: string }) {
+  const [content, setContent] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+    fetch(url, { signal: controller.signal })
+      .then(response => {
+        if (!response.ok) throw new Error("Unable to load this file.");
+        return response.text();
+      })
+      .then(value => {
+        if (item.extension === ".json") {
+          try { setContent(JSON.stringify(JSON.parse(value), null, 2)); }
+          catch { setContent(value); }
+        } else {
+          setContent(value);
+        }
+      })
+      .catch(reason => {
+        if (reason instanceof Error && reason.name !== "AbortError") setError(reason.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [item.extension, url]);
+
+  if (loading) return <p className="preview-state">Loading file contents…</p>;
+  if (error) return <p className="preview-state error">{error}</p>;
+  return <pre className="preview-text" aria-label={item.name}>{content}</pre>;
+}
+
 export default function App() {
   const [path, setPath] = useState("");
   const [search, setSearch] = useState("");
@@ -233,8 +269,11 @@ export default function App() {
     if (item.mime.startsWith("video/")) return <video className="preview-media" src={url} controls />;
     if (item.mime.startsWith("audio/")) return <audio src={url} controls />;
     if (item.mime === "application/pdf") return <iframe className="preview-frame" src={url} title={item.name} />;
-    if (item.mime.startsWith("text/") || item.extension === ".json" || item.extension === ".csv") {
-      return <iframe className="preview-frame" src={url} title={item.name} />;
+    if (item.mime.startsWith("text/") || item.extension === ".json" || item.extension === ".csv" || item.extension === ".md" || item.extension === ".log") {
+      if (item.size !== null && item.size > 2 * 1024 * 1024) {
+        return <p className="preview-state">This file is larger than 2 MB. Download it to inspect the full contents.</p>;
+      }
+      return <TextPreview item={item} url={url} />;
     }
     return <p>Preview is not available for this file type. Use Download to save it.</p>;
   }
@@ -308,8 +347,11 @@ export default function App() {
             </div></div>
             {!transfers.length ? <p className="muted">No active or recent transfers.</p> : transfers.map(item =>
               <div className="transfer-row" key={item.id}>
-                <div className="transfer-info"><span>{item.name}</span><small>{size(item.sent)} / {size(item.size)} · {item.status} {item.speed > 0 ? "· " + size(item.speed) + "/s" : ""} {item.status === "Uploading" || item.status === "Paused" ? "· " + duration(item.eta) : ""}</small></div>
-                <progress value={item.size ? item.sent : 1} max={item.size || 1} />
+                <div className="transfer-info">
+                  <div className="transfer-file"><span title={item.name}>{item.name}</span><strong className={"transfer-status " + (item.status === "Complete" ? "complete" : item.status === "Paused" ? "paused" : item.status === "Uploading" ? "active" : item.status === "Queued" ? "queued" : "failed")}>{item.status}</strong></div>
+                  <small>{size(item.sent)} / {size(item.size)} · {item.size ? Math.min(100, Math.round(item.sent / item.size * 100)) : 100}% {item.speed > 0 ? "· " + size(item.speed) + "/s" : ""} {item.status === "Uploading" || item.status === "Paused" ? "· " + duration(item.eta) : ""}</small>
+                  <progress aria-label={item.name + " upload progress"} value={item.size ? item.sent : 1} max={item.size || 1} />
+                </div>
               </div>)}
           </section>
           <footer><Smartphone size={15} /> Open this address on another device connected to the same Wi-Fi network.</footer>
@@ -326,7 +368,7 @@ export default function App() {
       </div>}
       {preview && <div className="preview-overlay" onClick={() => setPreview(null)}>
         <section className="preview-modal" onClick={event => event.stopPropagation()}>
-          <div className="preview-top"><div><strong>{preview.name}</strong><small>{size(preview.size)} · {preview.mime}</small></div>
+          <div className="preview-top"><div><strong>{preview.name}</strong><small>{size(preview.size)} · {preview.mime} · Modified {new Date(preview.modified).toLocaleString()}</small></div>
             <button className="icon" onClick={() => setPreview(null)} aria-label="Close preview"><X /></button></div>
           <div className="preview-body">{previewContent(preview)}</div>
           <div className="preview-bottom"><a className="subtle" href={fileUrl(preview) + "&download=1"}><ArrowDownToLine size={14} /> Download</a></div>

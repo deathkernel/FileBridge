@@ -79,3 +79,32 @@ footer{padding:12px 3px;color:#8393af}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #91b4ff;outline-offset:2px}
 @media(max-width:650px){.action-overlay{padding:10px;align-items:end}.action-dialog{padding:19px;border-radius:18px 18px 12px 12px}.toast{right:12px;bottom:12px}.item-actions .download{width:34px;height:34px}.file-name{min-height:40px}.subtle{min-height:34px}.icon{min-width:34px;min-height:34px}}
 @media(prefers-reduced-motion:reduce){.toast{animation:none}}
+
+/* Preview and transfer clarity pass */
+.preview-body{display:block;min-height:220px;background:rgba(5,10,20,.24)}
+.preview-text{width:100%;max-height:68vh;overflow:auto;margin:0;padding:18px 20px;border:1px solid rgba(143,174,235,.12);border-radius:10px;background:#0a1221;color:#d7e3f8;font:12px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2}
+.preview-state{margin:auto;padding:24px;color:#aebbd2;text-align:center;line-height:1.6}
+.transfer-file{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.transfer-file>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e7eefc;font-size:12px}
+.transfer-status{flex-shrink:0;padding:4px 7px;border:1px solid rgba(143,174,235,.18);border-radius:999px;color:#aebbd2;font-size:9px;font-weight:700}
+.transfer-status.active{color:#9ebaff;border-color:rgba(130,170,255,.3);background:rgba(104,143,232,.1)}
+.transfer-status.complete{color:#77dfbb;border-color:rgba(105,224,186,.25);background:rgba(105,224,186,.08)}
+.transfer-status.paused,.transfer-status.queued{color:#e9c47f;border-color:rgba(233,196,127,.25);background:rgba(233,196,127,.08)}
+.transfer-status.failed{color:#ff9da8;border-color:rgba(239,126,142,.28);background:rgba(239,126,142,.08)}
+.transfer-info progress{display:block;height:7px;border-radius:999px;background:rgba(143,174,235,.12)}
+.transfer-info progress::-webkit-progress-bar{border-radius:999px;background:rgba(143,174,235,.12)}
+.transfer-info progress::-webkit-progress-value{border-radius:999px;background:linear-gradient(90deg,#6e9af5,#9b8cff)}
+.transfer-info progress::-moz-progress-bar{border-radius:999px;background:linear-gradient(90deg,#6e9af5,#9b8cff)}
+.shell.light .preview-body{background:#f8faff}
+.shell.light .preview-text{background:#f5f7fc;border-color:#e2e8f2;color:#263b5b}
+.shell.light .transfer-file>span{color:#293b58}
+@media(max-width:650px){
+  .preview-body{padding:10px}
+  .preview-text{max-height:58vh;padding:13px;font-size:11px}
+  .preview-top{align-items:flex-start;padding:12px}
+  .preview-top>div{gap:6px}
+  .transfer-file{align-items:flex-start}
+  .transfer-row{gap:8px;padding:13px 0}
+  .transfer-info small{line-height:1.6}
+  .item-actions{flex-wrap:wrap}
+}
