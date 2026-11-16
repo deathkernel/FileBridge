@@ -45,7 +45,7 @@
 .selection-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 18px;border-top:1px solid rgba(255,166,92,.13);background:rgba(255,145,62,.055);color:#f6c49a;font-size:11px}
 .selection-bar>span{font-weight:700;margin-right:auto}
 .selection-bar .subtle{display:inline-flex;align-items:center;gap:6px}
-.select-visible{display:flex;justify-content:flex-end;padding:0 18px 8px;color:#bca38e;font-size:10px}
+.select-visible{grid-column:1/-1;display:flex;justify-content:flex-end;padding:0 18px 8px;color:#bca38e;font-size:10px}
 .select-visible label{display:flex;align-items:center;gap:7px;cursor:pointer}
 .item-select{position:absolute;z-index:3;top:10px;left:10px;width:17px;height:17px;accent-color:#f28b3d;cursor:pointer;filter:drop-shadow(0 1px 3px rgba(0,0,0,.35))}
 .file-card,.file-row{position:relative}
