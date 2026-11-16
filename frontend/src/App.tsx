@@ -95,7 +95,9 @@ function TextPreview({ item, url }: { item: Item; url: string }) {
 export default function App() {
   const [path, setPath] = useState("");
   const [search, setSearch] = useState("");
-  const [grid, setGrid] = useState(true);
+  const [grid, setGrid] = useState(() => localStorage.getItem("filebridge-view") !== "list");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [selected, setSelected] = useState<string[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [paused, setPaused] = useState(false);
   const [preview, setPreview] = useState<Item | null>(null);
@@ -112,15 +114,32 @@ export default function App() {
   const items = useMemo(
     () => (query.data?.items ?? [])
       .filter(item => item.name.toLowerCase().includes(search.toLowerCase()))
+      .filter(item => {
+        if (typeFilter === "all" || item.kind === "directory") return true;
+        if (typeFilter === "images") return item.mime.startsWith("image/");
+        if (typeFilter === "videos") return item.mime.startsWith("video/");
+        if (typeFilter === "audio") return item.mime.startsWith("audio/");
+        if (typeFilter === "documents") return item.mime.startsWith("text/") || item.mime === "application/pdf" || [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods"].includes(item.extension);
+        if (typeFilter === "archives") return [".zip", ".rar", ".7z", ".tar", ".gz"].includes(item.extension);
+        return !item.mime.startsWith("image/") && !item.mime.startsWith("video/") && !item.mime.startsWith("audio/") && !(item.mime.startsWith("text/") || item.mime === "application/pdf") && ![".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".zip", ".rar", ".7z", ".tar", ".gz"].includes(item.extension);
+      })
       .sort((a, b) => {
         if (a.kind !== b.kind) return a.kind === "directory" ? -1 : 1;
         if (sortBy === "size") return (b.size ?? -1) - (a.size ?? -1);
         if (sortBy === "modified") return b.modified.localeCompare(a.modified);
         return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
       }),
-    [query.data, search, sortBy],
+    [query.data, search, sortBy, typeFilter],
   );
   const crumbs = path ? path.split("/").filter(Boolean) : [];
+
+  useEffect(() => {
+    localStorage.setItem("filebridge-view", grid ? "grid" : "list");
+  }, [grid]);
+
+  useEffect(() => {
+    setSelected([]);
+  }, [path]);
 
   useEffect(() => {
     if (!toast) return;
@@ -139,6 +158,26 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  function toggleSelected(itemPath: string) {
+    setSelected(current => current.includes(itemPath) ? current.filter(value => value !== itemPath) : [...current, itemPath]);
+  }
+  function toggleAllVisible() {
+    const visiblePaths = items.map(item => item.path);
+    const allSelected = visiblePaths.length > 0 && visiblePaths.every(value => selected.includes(value));
+    setSelected(current => allSelected ? current.filter(value => !visiblePaths.includes(value)) : [...new Set([...current, ...visiblePaths])]);
+  }
+  async function deleteSelected() {
+    if (!selected.length || !window.confirm(`Permanently delete ${selected.length} selected item(s)? This cannot be undone.`)) return;
+    const paths = [...selected];
+    const failures: string[] = [];
+    for (const itemPath of paths) {
+      try { await api("/api/delete", json("POST", { path: itemPath })); }
+      catch { failures.push(itemPath.split("/").pop() || itemPath); }
+    }
+    setSelected([]);
+    await query.refetch();
+    setToast({ message: failures.length ? `${paths.length - failures.length} deleted; ${failures.length} failed.` : `${paths.length} item(s) deleted.`, kind: failures.length ? "error" : "success" });
+  }
   function updateTransfer(id: string, patch: Partial<Transfer>) {
     setTransfers(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
   }
@@ -310,6 +349,7 @@ export default function App() {
               <label className="search"><Search size={16} /><input placeholder="Search files..." value={search} onChange={event => setSearch(event.target.value)} /></label>
               <button className="icon" aria-label="List view" aria-pressed={!grid} onClick={() => setGrid(false)}><List /></button>
               <button className="icon" aria-label="Grid view" aria-pressed={grid} onClick={() => setGrid(true)}><LayoutGrid /></button>
+              <select className="sort-select" aria-label="Filter by file type" value={typeFilter} onChange={event => setTypeFilter(event.target.value)}><option value="all">All types</option><option value="images">Images</option><option value="videos">Videos</option><option value="audio">Audio</option><option value="documents">Documents</option><option value="archives">Archives</option><option value="other">Other files</option></select>
               <select className="sort-select" aria-label="Sort files" value={sortBy} onChange={event => setSortBy(event.target.value as typeof sortBy)}><option value="name">Name</option><option value="size">Size</option><option value="modified">Modified</option></select>
               <button className="icon" aria-label="Refresh" onClick={() => void query.refetch()}><RefreshCw /></button>
             </div></div>
@@ -318,11 +358,14 @@ export default function App() {
                 onChange={event => { if (event.target.files) void uploadFiles(event.target.files); event.target.value = ""; }} /></label>
               <button className="subtle" onClick={openCreateFolder}><FolderPlus size={14} /> New folder</button>
             </div></div>
+            {selected.length > 0 && <div className="selection-bar"><span>{selected.length} selected</span><button className="subtle danger-action" onClick={() => void deleteSelected()}><Trash2 size={14} /> Delete selected</button><button className="subtle" onClick={() => setSelected([])}>Clear selection</button></div>}
             {query.isLoading ? <div className="empty">Loading files…</div> : query.isError ? <div className="empty error">{query.error.message}</div> :
               !items.length ? <div className="empty"><Folder size={30} /><strong>This folder is empty</strong><span>Upload a file or create a folder to get started.</span></div> :
               <div className={grid ? "grid" : "rows"}>
                 {!grid && <div className="table-head"><span>Name</span><span>Size</span><span>Modified</span><span>Actions</span></div>}
+                {items.length > 0 && <div className="select-visible"><label><input type="checkbox" checked={items.every(item => selected.includes(item.path))} onChange={toggleAllVisible} /> Select all visible</label></div>}
                 {items.map(item => <motion.div layout key={item.path} className={grid ? "file-card" : "file-row"}>
+                  <input className="item-select" type="checkbox" checked={selected.includes(item.path)} onChange={() => toggleSelected(item.path)} aria-label={`Select ${item.name}`} />
                   {grid ? <>
                     <button className={item.kind === "directory" ? "card-visual folder-visual" : "card-visual"}
                       onClick={() => item.kind === "directory" ? setPath(item.path) : setPreview(item)}
