@@ -95,7 +95,7 @@ function TextPreview({ item, url }: { item: Item; url: string }) {
 export default function App() {
   const [path, setPath] = useState("");
   const [search, setSearch] = useState("");
-  const [grid, setGrid] = useState(false);
+  const [grid, setGrid] = useState(true);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [paused, setPaused] = useState(false);
   const [preview, setPreview] = useState<Item | null>(null);
@@ -308,8 +308,8 @@ export default function App() {
               {crumbs.map((crumb, index) => <span key={index}>/ <button onClick={() => setPath(crumbs.slice(0, index + 1).join("/"))}>{crumb}</button></span>)}
             </div><div className="tools">
               <label className="search"><Search size={16} /><input placeholder="Search files..." value={search} onChange={event => setSearch(event.target.value)} /></label>
-              <button className="icon" aria-label="List view" onClick={() => setGrid(false)}><List /></button>
-              <button className="icon" aria-label="Grid view" onClick={() => setGrid(true)}><LayoutGrid /></button>
+              <button className="icon" aria-label="List view" aria-pressed={!grid} onClick={() => setGrid(false)}><List /></button>
+              <button className="icon" aria-label="Grid view" aria-pressed={grid} onClick={() => setGrid(true)}><LayoutGrid /></button>
               <select className="sort-select" aria-label="Sort files" value={sortBy} onChange={event => setSortBy(event.target.value as typeof sortBy)}><option value="name">Name</option><option value="size">Size</option><option value="modified">Modified</option></select>
               <button className="icon" aria-label="Refresh" onClick={() => void query.refetch()}><RefreshCw /></button>
             </div></div>
@@ -322,18 +322,45 @@ export default function App() {
               !items.length ? <div className="empty"><Folder size={30} /><strong>This folder is empty</strong><span>Upload a file or create a folder to get started.</span></div> :
               <div className={grid ? "grid" : "rows"}>
                 {!grid && <div className="table-head"><span>Name</span><span>Size</span><span>Modified</span><span>Actions</span></div>}
-                {items.map(item => <motion.div layout key={item.path} className={grid ? "tile" : "file-row"}>
-                  <button className="file-name" onClick={() => item.kind === "directory" ? setPath(item.path) : setPreview(item)}>
-                    <Glyph item={item} /><span><strong>{item.name}</strong><small>{item.kind === "directory" ? "Folder" : item.mime}</small></span>
-                  </button>
-                  {!grid && <><span className="meta">{size(item.size)}</span><span className="meta date">{new Date(item.modified).toLocaleString()}</span></>}
-                  <div className="item-actions">
-                    {item.kind === "directory" ? <a className="download" title="Download ZIP" href={"/api/archive?" + new URLSearchParams({ path: item.path })}><ArrowDownToLine size={16} /></a> :
-                      <a className="download" title="Download" href={fileUrl(item) + "&download=1"}><ArrowDownToLine size={16} /></a>}
-                    <button className="download" title="Rename" aria-label={`Rename ${item.name}`} onClick={() => openRename(item)}><Pencil size={15} /></button>
-                    <button className="download" title="Move" aria-label={`Move ${item.name}`} onClick={() => openMove(item)}><Move size={15} /></button>
-                    <button className="download danger-action" title="Delete" aria-label={`Delete ${item.name}`} onClick={() => openDelete(item)}><Trash2 size={15} /></button>
-                  </div>
+                {items.map(item => <motion.div layout key={item.path} className={grid ? "file-card" : "file-row"}>
+                  {grid ? <>
+                    <button className={item.kind === "directory" ? "card-visual folder-visual" : "card-visual"}
+                      onClick={() => item.kind === "directory" ? setPath(item.path) : setPreview(item)}
+                      aria-label={item.kind === "directory" ? `Open folder ${item.name}` : `Preview ${item.name}`}>
+                      {item.kind === "file" && item.mime.startsWith("image/") ?
+                        <img className="card-thumbnail" src={fileUrl(item)} alt="" loading="lazy" /> :
+                        <Glyph item={item} />}
+                      <span className="card-type">{item.kind === "directory" ? "FOLDER" : item.extension ? item.extension.slice(1).toUpperCase() : item.mime.split("/").pop()?.toUpperCase() || "FILE"}</span>
+                    </button>
+                    <div className="card-content">
+                      <button className="file-name card-file-name" onClick={() => item.kind === "directory" ? setPath(item.path) : setPreview(item)}>
+                        <span><strong title={item.name}>{item.name}</strong><small>{item.kind === "directory" ? "Open folder" : item.mime}</small></span>
+                      </button>
+                      <div className="card-meta">
+                        <span>{item.kind === "directory" ? "Folder" : size(item.size)}</span>
+                        <time dateTime={item.modified}>{new Date(item.modified).toLocaleDateString()}</time>
+                      </div>
+                      <div className="item-actions card-actions">
+                        {item.kind === "directory" ? <a className="download" title="Download ZIP" aria-label={`Download ${item.name} as ZIP`} href={"/api/archive?" + new URLSearchParams({ path: item.path })}><ArrowDownToLine size={16} /></a> :
+                          <a className="download" title="Download" aria-label={`Download ${item.name}`} href={fileUrl(item) + "&download=1"}><ArrowDownToLine size={16} /></a>}
+                        <button className="download" title="Rename" aria-label={`Rename ${item.name}`} onClick={() => openRename(item)}><Pencil size={15} /></button>
+                        <button className="download" title="Move" aria-label={`Move ${item.name}`} onClick={() => openMove(item)}><Move size={15} /></button>
+                        <button className="download danger-action" title="Delete" aria-label={`Delete ${item.name}`} onClick={() => openDelete(item)}><Trash2 size={15} /></button>
+                      </div>
+                    </div>
+                  </> : <>
+                    <button className="file-name" onClick={() => item.kind === "directory" ? setPath(item.path) : setPreview(item)}>
+                      <Glyph item={item} /><span><strong>{item.name}</strong><small>{item.kind === "directory" ? "Folder" : item.mime}</small></span>
+                    </button>
+                    <span className="meta">{size(item.size)}</span><span className="meta date">{new Date(item.modified).toLocaleString()}</span>
+                    <div className="item-actions">
+                      {item.kind === "directory" ? <a className="download" title="Download ZIP" href={"/api/archive?" + new URLSearchParams({ path: item.path })}><ArrowDownToLine size={16} /></a> :
+                        <a className="download" title="Download" href={fileUrl(item) + "&download=1"}><ArrowDownToLine size={16} /></a>}
+                      <button className="download" title="Rename" aria-label={`Rename ${item.name}`} onClick={() => openRename(item)}><Pencil size={15} /></button>
+                      <button className="download" title="Move" aria-label={`Move ${item.name}`} onClick={() => openMove(item)}><Move size={15} /></button>
+                      <button className="download danger-action" title="Delete" aria-label={`Delete ${item.name}`} onClick={() => openDelete(item)}><Trash2 size={15} /></button>
+                    </div>
+                  </>}
                 </motion.div>)}
               </div>}
           </section>
